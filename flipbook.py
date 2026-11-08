@@ -202,45 +202,19 @@ def chooseRecorder(viewport, resolution: tuple, mode: str):
     return torn
 
 
-# Options DinoWrite changes on purpose while recording (restored in the end)
-DELIBERATE_OPTIONS = ("colorScheme", "displayBackgroundImage")
-
-
-def _snapshot(viewer):
-    snapshot = getattr(viewer, "snapshot", None)
-    return snapshot() if snapshot else None
-
-
-def _restoreOptions(viewer, snapshot, step: str, skip=DELIBERATE_OPTIONS):
-    """Viewer display options changed by step (resize, warm-up...) go back to what the user had"""
-    restore = getattr(viewer, "restore", None)
-    if snapshot is None or restore is None:
-        return
-    restored = restore(snapshot, skip)
-    if restored:
-        log.info("Viewer options changed by %s, restored: %s", step, ", ".join(restored))
-
-
 def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
            black_background: bool = False, hide_background_image: bool = False):
-    """Record flipbook, always returning viewers to their original state.
-
-    Viewer display options (lighting, shading...) are remembered first and put back before the flipbook
-    and at the end: maximizing/resizing the viewer or the warm-up frame can reset them (Solaris switched
-    Headlight Only to Normal Lighting).
-    """
+    """Record flipbook, always returning viewers to their original state"""
     recorder = viewport
     prev_color_scheme = None
     prev_background_image = None
     was_maximized = viewport.isMaximized()
-    options = _snapshot(viewport)
     try:
         recorder = chooseRecorder(viewport, resolution, mode)
         if recorder is viewport:
             # Maximize window to get better quality
             viewport.maximize_viewport()
             viewport.settle()
-        _restoreOptions(recorder, options, "maximizing/resizing the viewer")
 
         # Remember viewer state before changing it
         if black_background:
@@ -251,9 +225,7 @@ def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
             recorder.displayBackgroundImage(False)
 
         warmUp(recorder, flipbook_options)
-        _restoreOptions(recorder, options, "the warm-up frame")
         recorder.startFlipbook(flipbook_options)
-        _restoreOptions(recorder, options, "the flipbook", skip=())
     finally:
         if prev_color_scheme is not None:
             recorder.colorScheme(prev_color_scheme)
@@ -261,7 +233,6 @@ def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
             recorder.displayBackgroundImage(prev_background_image)
         recorder.close()
         viewport.maximize_viewport(was_maximized)
-        _restoreOptions(viewport, options, "recording", skip=())
 
 
 def warmUp(recorder, flipbook_options):

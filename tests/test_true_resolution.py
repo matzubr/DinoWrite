@@ -339,32 +339,3 @@ def test_torn_off_viewer_gets_the_viewer_display_options(monkeypatch, hou):
     viewport_mod.copyViewportSettings(source, target)
     assert target.lighting() == "headlight" and target.ambientOcclusion() is True
     assert target.sets["scene"].shadedMode() == "flat"
-
-
-def test_record_keeps_the_viewer_lighting(monkeypatch, hou):
-    """Solaris: maximizing reset Headlight Only to Normal Lighting; the flipbook must be recorded with the
-    user's lighting and the viewer keeps it afterwards"""
-    monkeypatch.setattr(hou, "displaySetType", type("T", (), {"SceneObject": "scene"}), raising=False)
-
-    class Viewer(FakeViewer):
-        def __init__(self, size):
-            super().__init__(size)
-            self.settings = FakeSettings(lighting="headlight")
-            self.lighting_at_flipbook = []
-
-        snapshot = viewport_mod.HouViewport.snapshot
-        restore = viewport_mod.HouViewport.restore
-        _displaySets = viewport_mod.HouViewport._displaySets
-
-        def maximize_viewport(self, on=True):
-            super().maximize_viewport(on)
-            self.settings.setLighting("normal")  # what Houdini did
-
-        def startFlipbook(self, options):
-            super().startFlipbook(options)
-            self.lighting_at_flipbook.append(self.settings.lighting())
-
-    viewer = Viewer((2560, 1400))
-    flipbook.record(viewer, FakeOptions(), (1920, 1080), mode="auto")
-    assert viewer.lighting_at_flipbook == ["headlight", "headlight"], "warm-up and the flipbook"
-    assert viewer.settings.lighting() == "headlight", "restored after the final un-maximize"
