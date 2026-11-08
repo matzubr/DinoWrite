@@ -1,6 +1,6 @@
 [project]
 name = "dinowrite"
-version = "1.0.1"
+version = "1.2.5"
 description = "Houdini tool to write flipbooks to disk"
 readme = "README.md"
 # Houdini 21 ships Python 3.11
@@ -11,6 +11,8 @@ dependencies = []
 dev = [
     "pytest>=8",
     "ruff>=0.6",
+    # Houdini 21 uses PySide6 (Qt6); used for offscreen GUI smoke tests
+    "pyside6>=6.5",
 ]
 
 [tool.uv]

@@ -1,14 +1,9 @@
-from PySide2.QtWidgets import *
-from PySide2.QtGui import *
-from PySide2.QtCore import *
-from pathlib import Path
-from importlib import reload
+from .qt import *  # noqa: F403
+from .resources import FONT_FILE, STYLESHEETS_FILE, Icons as _Icons, StyleSheet
+from ..core.log import log
 
-from . import utils
-reload(utils)
-
-styles = utils.StyleSheet((Path(__file__).parent / "stylesheets.json").as_posix())
-Icons = utils.Icons()
+styles = StyleSheet(STYLESHEETS_FILE.as_posix())
+Icons = _Icons()
 
 #CONSTANTs
 MAIN_FONT =   styles.get("main").get('font')
@@ -16,12 +11,12 @@ MAIN_SIZE =   max(styles.get("main").get('fontsize'),3)
 TEXT_WEIGHT = {"normal": QFont.Medium,"bold": QFont.Bold}
 
 if MAIN_FONT=="_custom_":
-    id = QFontDatabase.addApplicationFont((Path(__file__).parents[1] / "misc" / "font.ttf").as_posix())
-    if id < 0:
-        utils.log.warning("No font found in 'misc/font.ttf'")
+    font_id = QFontDatabase.addApplicationFont(FONT_FILE.as_posix())
+    if font_id < 0:
+        log.warning("No font found in 'misc/font.ttf'")
         MAIN_FONT = "Arial"
     else:
-        MAIN_FONT = QFontDatabase.applicationFontFamilies(id)[0]
+        MAIN_FONT = QFontDatabase.applicationFontFamilies(font_id)[0]
 
 def Completer(array:list) -> QCompleter: 
     completer = QCompleter(array)
@@ -161,7 +156,7 @@ class DropDownButton(QPushButton):
         self.setChecked(False)
 
         if icon:
-            self.setIcon(QIcon((Path(__file__).parent / "icons" / icon).as_posix()))
+            self.setIcon(Icons.get(icon))
 
         self.menu = QMenu()
         self.menu.setFont(QFont(font,size))
@@ -170,6 +165,7 @@ class DropDownButton(QPushButton):
         self.menu.setCursor(Qt.PointingHandCursor)
         self.setMenu(self.menu)
 
+        menu = list(menu)
         if len(menu)==0:
             menu.append("No folders found")
 

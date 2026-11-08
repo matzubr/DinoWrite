@@ -1,12 +1,20 @@
-"""Stubs for Houdini-only modules (hou, pxr, PySide2), so pure helpers can be tested outside Houdini."""
-import importlib.util
+"""Test setup: DinoWrite is imported as a package with a stubbed `hou` module.
+
+Unknown hou attributes resolve to MagicMock, so GUI code can be constructed offscreen.
+"""
+import os
 import sys
 import types
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+assert ROOT.name == "DinoWrite", "tests expect the repo folder to be named DinoWrite (the package name)"
+sys.path.insert(0, ROOT.parent.as_posix())
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 class HouError(Exception):
@@ -20,33 +28,19 @@ def _hscript_expression(value):
     raise HouError(f"Bad expression: {value}")
 
 
-def _install_stubs():
+def _make_hou():
     hou = types.ModuleType("hou")
     hou.Error = HouError
     hou.hscriptExpression = _hscript_expression
     hou.getenv = lambda name, default=None: default
     hou.text = types.SimpleNamespace(expandString=lambda s: s)
-    sys.modules["hou"] = hou
-
-    pxr = types.ModuleType("pxr")
-    pxr.Sdf = pxr.Usd = None
-    sys.modules["pxr"] = pxr
-
-    # Star imports pull only names from __all__, so expose dummy classes used in annotations
-    qt_names = {"QtWidgets": ["QWidget"], "QtGui": ["QIcon"], "QtCore": ["Qt"]}
-    sys.modules["PySide2"] = types.ModuleType("PySide2")
-    for name, classes in qt_names.items():
-        module = types.ModuleType(f"PySide2.{name}")
-        for cls in classes:
-            setattr(module, cls, type(cls, (), {}))
-        module.__all__ = classes
-        sys.modules[f"PySide2.{name}"] = module
+    hou.__getattr__ = lambda name: MagicMock(name=f"hou.{name}")
+    return hou
 
 
-@pytest.fixture(scope="session")
-def utils():
-    _install_stubs()
-    spec = importlib.util.spec_from_file_location("dinowrite_utils", ROOT / "utils" / "utils.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+sys.modules["hou"] = _make_hou()
+
+
+@pytest.fixture
+def hou():
+    return sys.modules["hou"]

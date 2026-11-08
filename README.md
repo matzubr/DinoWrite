@@ -50,10 +50,13 @@ There are a bunch of little tips that I use in my daily workflow to make it easi
 3. Create ShelfTool with following code:
 
 ```
-from DinoWrite import ui
-ui.DinoWriter(kwargs)
+import DinoWrite
+DinoWrite.show(kwargs)
 ```
-Pay attention that `DinoWrite` is name of the folder that you copied to the python lib folder
+Pay attention that `DinoWrite` is name of the folder that you copied to the python lib folder.
+Old shelf code `from DinoWrite import ui; ui.DinoWriter(kwargs)` still works.
+
+Works with Houdini 21+ (PySide6 / Qt6) and older Qt5 builds (PySide2).
 
 ## Development
 ---
@@ -64,6 +67,19 @@ uv sync            # create .venv with dev tools
 uv run pytest      # run tests (hou, pxr and PySide2 are stubbed)
 uv run ruff check  # lint
 ```
+
+Use `DinoWrite.show(kwargs, reload=True)` in a shelf tool to pick up code changes without restarting Houdini.
+
+Project layout:
+
+| path | what |
+|---|---|
+| `__init__.py` | `show()` entry point, dev `reload_modules()` |
+| `main.py` | main window |
+| `flipbook.py` | recording + conversion pipeline |
+| `core/` | Houdini logic without Qt: viewport, ffmpeg, helpers, logging |
+| `gui/` | Qt: PySide6/PySide2 compat (`qt.py`), widgets, styles, icons |
+| `settings.json` | default settings |
 
 ### Credits
 - [Alexander Marchenko](https://www.linkedin.com/in/cg-alexander-marchenko/)

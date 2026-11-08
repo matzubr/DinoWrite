@@ -1,13 +1,13 @@
 from pathlib import Path
-from importlib import reload
 from re import search
-from .utils import utils
 
 import hou
 import json
 import webbrowser as wb
 
-reload(utils)
+from .core import ffmpeg, helpers
+from .core.log import hmsg, log
+from .core.viewport import HouViewport
 
 def start(data,kwargs):
 
@@ -23,7 +23,7 @@ def start(data,kwargs):
 
     frame_padding = search(r"\$F\d+",fb_name)
     if not frame_padding:
-        utils.log.error("No frame padding like '$F4' in 'fb_name' found")
+        log.error("No frame padding like '$F4' in 'fb_name' found")
         return 0
     else:
         frame_padding = frame_padding[0]
@@ -34,10 +34,10 @@ def start(data,kwargs):
     file_format = data.get("fileformat")
     file_resolution = tuple((int(data.get("resx")), int(data.get("resy"))))
 
-    frame_start = utils.evalFrame(data.get("framestart"))
-    frame_end = utils.evalFrame(data.get("frameend"))
+    frame_start = helpers.evalFrame(data.get("framestart"))
+    frame_end = helpers.evalFrame(data.get("frameend"))
     if frame_start is None or frame_end is None:
-        utils.hmsg(f"Can't evaluate frame range:\n{data.get('framestart')} - {data.get('frameend')}", level="error")
+        hmsg(f"Can't evaluate frame range:\n{data.get('framestart')} - {data.get('frameend')}", level="error")
         return 0
     frame_end = max(frame_start,frame_end)
 
@@ -48,7 +48,7 @@ def start(data,kwargs):
         write_folder.mkdir(parents=True, exist_ok=True)
 
     # Get newer folder version of flipbook (only 'vNNN' folders, compared as numbers)
-    ver_str = utils.nextVersion(write_folder)
+    ver_str = helpers.nextVersion(write_folder)
 
     # Set output filename
     filename = fb_name.format(
@@ -56,7 +56,7 @@ def start(data,kwargs):
     output_filepath = write_folder / ver_str / filename
 
     # Get Viewport
-    viewport = utils.HouViewport(kwargs)
+    viewport = HouViewport(kwargs)
 
     # Stash flipbook settings
     flipbook_options = viewport.flipbook_settings()
@@ -114,7 +114,7 @@ def start(data,kwargs):
     sequence_folder = output_filepath.parent
     files_keeped = sequence_folder.exists()
     if not files_keeped:
-        utils.log.warning(f"No frames were written to:\n{sequence_folder.as_posix()}")
+        log.warning(f"No frames were written to:\n{sequence_folder.as_posix()}")
 
     if files_keeped and advanced['delete_incomplete_fb']:
         fb_length = int(frame_end - frame_start) + 1
@@ -126,15 +126,15 @@ def start(data,kwargs):
             if not any(sequence_folder.iterdir()):
                 sequence_folder.rmdir()
             files_keeped=False
-            utils.log.warning(f"Incomplete flipbook deleted ({len(files)} of {fb_length} frames):\n{sequence_folder.as_posix()}")
+            log.warning(f"Incomplete flipbook deleted ({len(files)} of {fb_length} frames):\n{sequence_folder.as_posix()}")
 
     if data.get("convertvideo") and files_keeped:
-        fps = utils.ffmpegFps(hou.fps())
+        fps = helpers.ffmpegFps(hou.fps())
         aspect = float(data.get("aspect") or 1)
         resolution = f"{file_resolution[0]}x{file_resolution[1]}"
         start_frame = int(frame_start)
 
-        ffmpeg = utils.FFmpeg(config_path=None,
+        converter = ffmpeg.FFmpeg(config_path=None,
                             cmd=ffmpeg_cmd,
                             binary=advanced.get("ffmpeg_path", ""))
 
@@ -142,7 +142,7 @@ def start(data,kwargs):
         output_video = (output_filepath.parent /
                         filename).as_posix().replace(f"{frame_padding}.{file_format}", fb_video_ext)
 
-        ffmpeg.convert_to_video(fps=fps,
+        converter.convert_to_video(fps=fps,
                                 resolution=resolution,
                                 aspect=file_resolution[0]/file_resolution[1]*aspect,
                                 start_frame=start_frame,
