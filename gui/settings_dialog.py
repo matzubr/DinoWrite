@@ -36,7 +36,6 @@ def bodyStyle() -> str:
         styles.get("label"), line_edit, styles.get("mainbutton"), styles.get("combobox"),
         styles.get("checkbox"), styles.get("menu"),
         line_edit.replace("QLineEdit", "QPlainTextEdit"),
-        line_edit.replace("QLineEdit", "QSpinBox"),
         f"""
         QTabWidget::pane {{
             background-color: {COLORS['grey']};
@@ -86,7 +85,6 @@ class SettingsDialog(RoundedWindow, QDialog):
         tabs.addTab(self._generalTab(), "General")
         tabs.addTab(self._videoTab(), "Video")
         tabs.addTab(self._presetsTab(), "Presets")
-        tabs.addTab(self._ffmpegTab(), "ffmpeg command")
 
         user_file = QLabel(f"User settings: {config.userSettingsPath().as_posix()}")
         user_file.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -143,28 +141,20 @@ class SettingsDialog(RoundedWindow, QDialog):
         return self._page(form)
 
     def _videoTab(self) -> QWidget:
-        self.video_codec = QComboBox()
-        self.video_codec.setEditable(True)
-        self.video_codec.addItems(["auto"] + list(ffmpeg.CODECS))
-        self.video_codec.setToolTip("auto: the best encoder this ffmpeg has (Houdini's hffmpeg has no libx264),\n"
-                                    "falls back to the next one if it fails")
-        self.ffmpeg_path, ffmpeg_row = self._pathRow("Empty: $PDG_FFMPEG, $HFS/bin/hffmpeg, system PATH")
-        self.tools_status = QLabel()
-        # no word wrap: QFormLayout gets the height of a wrapped label wrong and rows overlap
-        self.tools_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.ffmpeg_path.editingFinished.connect(self._updateToolsStatus)
-
         self.delete_input = QCheckBox("Delete image sequence after successful conversion")
         self.open_after = QComboBox()
         for key, label in OPEN_AFTER:
             self.open_after.addItem(label, key)
+        self.tools_status = QLabel()
+        # no word wrap: QFormLayout gets the height of a wrapped label wrong and rows overlap
+        self.tools_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.tools_status.setToolTip("ffmpeg path, encoder and the command: advanced.ffmpeg_path, "
+                                     "advanced.video_codec, ffmpeg_cmd in the user settings file")
 
         form = QFormLayout()
-        form.addRow("Video codec", self.video_codec)
-        form.addRow("ffmpeg", ffmpeg_row)
-        form.addRow("", self.tools_status)
-        form.addRow("", self.delete_input)
         form.addRow("Open result", self.open_after)
+        form.addRow("", self.delete_input)
+        form.addRow("", self.tools_status)
         return self._page(form)
 
     def _presetsTab(self) -> QWidget:
@@ -182,42 +172,10 @@ class SettingsDialog(RoundedWindow, QDialog):
         layout.addWidget(self.frame_ranges)
         return self._page(layout)
 
-    def _ffmpegTab(self) -> QWidget:
-        self.ffmpeg_cmd = QPlainTextEdit()
-        self.ffmpeg_cmd.setLineWrapMode(QPlainTextEdit.NoWrap)
-        hint = QLabel("One option per line. Placeholders: {fps} {start_frame} {input} {resolution} {aspect} "
-                      "{vf} {codec} {output}.\nA line whose placeholder is empty is skipped. "
-                      "First line 'ffmpeg' is replaced by the found executable.")
-        hint.setWordWrap(True)
-        layout = QVBoxLayout()
-        layout.addWidget(hint)
-        layout.addWidget(self.ffmpeg_cmd)
-        return self._page(layout)
-
     def _page(self, layout) -> QWidget:
         page = QWidget()
         page.setLayout(layout)
         return page
-
-    def _pathRow(self, placeholder: str):
-        line = QLineEdit()
-        line.setPlaceholderText(placeholder)
-        browse = QPushButton("...")
-        browse.setFixedWidth(30)
-        browse.clicked.connect(lambda: self._browse(line))
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(line)
-        row.addWidget(browse)
-        widget = QWidget()
-        widget.setLayout(row)
-        return line, widget
-
-    def _browse(self, line: QLineEdit):
-        path, _ = QFileDialog.getOpenFileName(self, "Select executable", line.text())
-        if path:
-            line.setText(path)
-            self._updateToolsStatus()
 
     # ---------- load / collect ----------
 
@@ -229,17 +187,14 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.delete_incomplete.setChecked(bool(advanced.get("delete_incomplete_fb")))
         self.true_resolution.setCurrentIndex(max(self.true_resolution.findData(advanced.get("true_resolution", "auto")), 0))
 
-        self.ffmpeg_path.setText(advanced.get("ffmpeg_path", ""))
-        self.video_codec.setCurrentText(advanced.get("video_codec", "auto") or "auto")
         self.delete_input.setChecked(bool(advanced.get("conversion_delete_input_sequence")))
         self.open_after.setCurrentIndex(max(self.open_after.findData(advanced.get("open_after", "video")), 0))
 
         self.resolutions.setPlainText("\n".join(settings.get("custom_resolution", [])))
         self.frame_ranges.setPlainText("\n".join(
             f"{name} = {value}" for name, value in settings.get("custom_framerange", {}).items()))
-        self.ffmpeg_cmd.setPlainText("\n".join(settings.get("ffmpeg_cmd", [])))
 
-        self._updateToolsStatus()
+        self._updateToolsStatus(advanced)
 
     def collect(self) -> tuple:
         """Returns (settings, errors)"""
@@ -262,8 +217,6 @@ class SettingsDialog(RoundedWindow, QDialog):
 
         advanced["delete_incomplete_fb"] = self.delete_incomplete.isChecked()
         advanced["true_resolution"] = self.true_resolution.currentData()
-        advanced["ffmpeg_path"] = self.ffmpeg_path.text().strip()
-        advanced["video_codec"] = self.video_codec.currentText().strip() or "auto"
         advanced["conversion_delete_input_sequence"] = self.delete_input.isChecked()
         advanced["open_after"] = self.open_after.currentData()
 
@@ -285,11 +238,6 @@ class SettingsDialog(RoundedWindow, QDialog):
                 frame_ranges[name.strip()] = " ".join(value.split())
         settings["custom_framerange"] = frame_ranges
 
-        settings["ffmpeg_cmd"] = self._lines(self.ffmpeg_cmd)
-        if not any("{input}" in line for line in settings["ffmpeg_cmd"]) or \
-                not any("{output}" in line for line in settings["ffmpeg_cmd"]):
-            errors.append("ffmpeg command must contain {input} and {output}")
-
         return settings, errors
 
     @staticmethod
@@ -298,12 +246,13 @@ class SettingsDialog(RoundedWindow, QDialog):
 
     # ---------- reactions ----------
 
-    def _updateToolsStatus(self):
-        ffmpeg_found = ffmpeg.findFFmpeg(self.ffmpeg_path.text().strip())
-        encoders = ffmpeg.codecCandidates("auto", ffmpeg.availableEncoders(ffmpeg_found)) if ffmpeg_found else []
+    def _updateToolsStatus(self, advanced: dict):
+        ffmpeg_found = ffmpeg.findFFmpeg(advanced.get("ffmpeg_path", ""))
+        encoders = ffmpeg.codecCandidates(advanced.get("video_codec", "auto"),
+                                          ffmpeg.availableEncoders(ffmpeg_found)) if ffmpeg_found else []
         self.tools_status.setText(
-            f"ffmpeg: {ffmpeg_found or 'NOT FOUND'}\n"
-            f"encoders (auto order): {', '.join(encoders) or 'unknown'}")
+            f"ffmpeg: {ffmpeg_found or 'NOT FOUND, video conversion is skipped'}\n"
+            f"encoders (tried in order): {', '.join(encoders) or 'unknown'}")
         # the form layout sized this row before the text was set: reserve height for every line
         lines = self.tools_status.text().count("\n") + 1
         self.tools_status.setMinimumHeight(self.tools_status.fontMetrics().lineSpacing() * lines + 4)

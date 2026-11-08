@@ -58,9 +58,11 @@ Click the gear button in the window title. Tabs:
 | tab | what |
 |---|---|
 | General | flipbooks folder, file name template, video extension, recording viewer, incomplete flipbook cleanup |
-| Video | video codec, ffmpeg path (shows which ffmpeg and encoders are found), sequence cleanup, what to open after writing |
+| Video | what to open after writing, sequence cleanup; shows which ffmpeg and encoders are found |
 | Presets | resolution and frame range presets for the dropdown menus |
-| ffmpeg command | the ffmpeg command template |
+
+ffmpeg path, encoder and the ffmpeg command template (`advanced.ffmpeg_path`, `advanced.video_codec`, `ffmpeg_cmd`)
+are only in the settings file: they work out of the box.
 
 Defaults live in `settings.json` inside the tool folder. Your changes are saved separately to
 `$HOUDINI_USER_PREF_DIR/DinoWrite/settings.json` (or the path in `$DINOWRITE_SETTINGS`) and contain only the values

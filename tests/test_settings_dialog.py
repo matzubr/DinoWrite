@@ -28,16 +28,15 @@ def test_unchanged_dialog_collects_current_settings(dialog):
 
 
 def test_video_tab_shows_found_ffmpeg_and_encoders(dialog):
-    assert dialog.tools_status.text() == "ffmpeg: /hfs/bin/hffmpeg\nencoders (auto order): h264_mf, mpeg4"
+    assert dialog.tools_status.text() == "ffmpeg: /hfs/bin/hffmpeg\nencoders (tried in order): h264_mf, mpeg4"
 
 
 def test_validation_errors(dialog):
     dialog.fb_name.setText("{name}.{version}.{fileformat}")
     dialog.resolutions.setPlainText("1920 1080\nwide")
     dialog.frame_ranges.setPlainText("Broken range")
-    dialog.ffmpeg_cmd.setPlainText("ffmpeg\n-i {input}")
     _, errors = dialog.collect()
-    assert len(errors) == 4
+    assert len(errors) == 3
 
 
 def test_unknown_template_placeholder_is_rejected(dialog):
@@ -47,14 +46,14 @@ def test_unknown_template_placeholder_is_rejected(dialog):
 
 
 def test_save_writes_only_changes(dialog, tmp_path):
-    dialog.video_codec.setCurrentText("mpeg4")
+    dialog.open_after.setCurrentIndex(dialog.open_after.findData("folder"))
     dialog.resolutions.setPlainText("4096   2160\n1920 1080")
     dialog.frame_ranges.setPlainText("Shot = 1001 1100")
     dialog.save()
 
     stored = json.loads((tmp_path / "user_settings.json").read_text())
     assert stored == {
-        "advanced": {"video_codec": "mpeg4"},
+        "advanced": {"open_after": "folder"},
         "custom_resolution": ["4096 2160", "1920 1080"],
         "custom_framerange": {"Shot": "1001 1100"},
     }
