@@ -18,7 +18,7 @@ TEXT_WEIGHT = {"normal": QFont.Medium,"bold": QFont.Bold}
 if MAIN_FONT=="_custom_":
     id = QFontDatabase.addApplicationFont((Path(__file__).parents[1] / "misc" / "font.ttf").as_posix())
     if id < 0:
-        utils.logger("No font found in 'misc/font.ttf'")
+        utils.log.warning("No font found in 'misc/font.ttf'")
         MAIN_FONT = "Arial"
     else:
         MAIN_FONT = QFontDatabase.applicationFontFamilies(id)[0]

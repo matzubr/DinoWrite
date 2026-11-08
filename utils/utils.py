@@ -1,5 +1,7 @@
 import hou
 import json
+import logging
+import sys
 from pathlib import Path
 import subprocess
 from os import environ as osenviron
@@ -12,22 +14,32 @@ from PySide2.QtWidgets import *
 from PySide2.QtGui import *
 from PySide2.QtCore import *
 
-def logger(message:str,length=70) -> None:
-    """Simple console logger
+LOGGER_NAME = "DinoWrite"
 
-    Args:
-        message (str): Message to print in console
-        length (str, optional): Length of stroke. Defaults to "auto" leads to set length to a length of message.
+class _HoudiniConsoleHandler(logging.Handler):
+    """Writes to the current sys.stdout on every record.
+
+    Houdini swaps sys.stdout for its Python Shell / console, so a StreamHandler
+    bound to the stream at creation time may print to the wrong place.
     """
-    if length=="auto":
-        length = len(message)
-        print(" DinoWriter ".center(length,"-"))
-        print(message)
-        print(f"{'-'*length}")
-    else:
-        print(" DinoWriter ".center(length,"-"))
-        print(message)
-        print(f"{'-'*length}")
+    def emit(self, record):
+        try:
+            print(self.format(record), file=sys.stdout)
+        except Exception:
+            self.handleError(record)
+
+def getLogger() -> logging.Logger:
+    """Module logger. Handler is added once, so reload(utils) doesn't duplicate messages."""
+    logger = logging.getLogger(LOGGER_NAME)
+    if not any(isinstance(h, _HoudiniConsoleHandler) for h in logger.handlers):
+        handler = _HoudiniConsoleHandler()
+        handler.setFormatter(logging.Formatter("[%(name)s] %(levelname)s: %(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+    return logger
+
+log = getLogger()
 
 def hmsg(message:str,buttons=("Sorry,Dino!",),level="message") -> None:
     """Houdini message window 
@@ -46,7 +58,7 @@ def hmsg(message:str,buttons=("Sorry,Dino!",),level="message") -> None:
     if message:
         hou.ui.displayMessage(message,buttons=buttons,severity=levels[level],title="DinoWrite say")
     else:
-        logger("No message set in hsmg function")
+        log.warning("No message set in hsmg function")
 
 VERSION_FOLDER_PATTERN = re.compile(r"^v(\d+)$")
 VERSION_MIN_PADDING = 3
@@ -147,7 +159,7 @@ class FFmpeg:
         system_os = hou.getenv("OS")
 
         if not config_path and not cmd:
-            logger("No config path or cmd set")
+            log.warning("No config path or cmd set")
 
         # Check for ffmpeg availability in system envs on different os (i believe)
         if system_os=="Windows_NT" and (Path(bin) / "ffmpeg.exe").exists():
@@ -162,7 +174,7 @@ class FFmpeg:
     def cmd(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="") -> list:
 
         if input == "" or output == "":
-            logger("No input or output set")
+            log.error("No input or output set")
             return 0
 
         if self.cmdvar:
@@ -182,7 +194,7 @@ class FFmpeg:
 
     def convert_to_video(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", delete_input=False):
         if not self.available:
-            logger("ffmpeg is not available, video conversion skipped")
+            log.warning("ffmpeg is not available, video conversion skipped")
             return 0
 
         ffmpeg_cmd = self.cmd(fps=fps, resolution=resolution, aspect=aspect,
@@ -194,14 +206,15 @@ class FFmpeg:
         else:
             files = []
 
+        log.info("Running: %s", subprocess.list2cmdline(ffmpeg_cmd))
         try:
-            # subprocess.run(ffmpeg_cmd, check=True, shell=True)
-            subprocess.run(ffmpeg_cmd, check=True)
+            subprocess.run(ffmpeg_cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
-            logger(f"Error occured during subprocces run ffmpeg command\n\nErrorLog:\n{e}")
+            stderr_tail = "\n".join((e.stderr or "").strip().splitlines()[-15:])
+            log.error("ffmpeg failed with exit code %s:\n%s", e.returncode, stderr_tail)
             return 0
         except FileNotFoundError as e:
-            logger(f"ffmpeg executable not found\n\nErrorLog:\n{e}")
+            log.error("ffmpeg executable not found: %s", e)
             return 0
 
         if len(files) != 0 and delete_input:
@@ -213,7 +226,7 @@ class HouViewport:
         self.viewport_panetab = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)
 
         if not self.viewport_panetab.isCurrentTab():
-            logger("Starting the tool from a shelf leads to the recording of a flipbook from the first SceneViewer that comes across")
+            log.info("Starting the tool from a shelf leads to the recording of a flipbook from the first SceneViewer that comes across")
             self.viewport_panetab.setIsCurrentTab()
 
         if hou.ui.paneTabOfType(hou.paneTabType.SceneViewer,1):
@@ -221,7 +234,7 @@ class HouViewport:
             if paneTab and paneTab.type() == hou.paneTabType.SceneViewer:
                 self.viewport_panetab = paneTab
             else:
-                logger("Multiple viewers detected!\nYou can select a viewer by executing the tool from the desired")
+                log.warning("Multiple viewers detected!\nYou can select a viewer by executing the tool from the desired")
 
         self.viewport_pane = self.viewport_panetab.pane()
         self.settings = self.viewport_panetab.curViewport().settings()
@@ -278,7 +291,7 @@ class HouViewport:
                 
             elif len(render_prims)>0:
                 if len(render_prims)>1:
-                    logger("Multiple rendersettings prims detected!\nResolution will be taken from the first alphabetically ordered prim")
+                    log.warning("Multiple rendersettings prims detected!\nResolution will be taken from the first alphabetically ordered prim")
                 render_prim = render_prims[0]
                 resolution_prop = render_prim.GetProperty("resolution")
                 resolution = resolution_prop.Get() if resolution_prop else None
@@ -286,7 +299,7 @@ class HouViewport:
                     resx = resolution[0]
                     resy = resolution[1]
                 else:
-                    logger("No resolution authored on rendersettings prim\nReturning resolution from viewport size")
+                    log.warning("No resolution authored on rendersettings prim\nReturning resolution from viewport size")
                     size = viewport.size()
                     resx = size[2]
                     resy = size[3]
@@ -298,7 +311,7 @@ class HouViewport:
                 resx = camera.evalParm("resx")
                 resy = camera.evalParm("resy")
             else:
-                logger("No Camera Found in viewport\nReturning resolution from viewport size")
+                log.info("No Camera Found in viewport\nReturning resolution from viewport size")
                 size = viewport.size()
                 resx = size[2]
                 resy = size[3]
@@ -328,7 +341,7 @@ class HouViewport:
             if camera:
                 aspect = camera.evalParm("aspect")
             else:
-                # logger("No Camera Found in viewport\nReturning aspect 1")
+                # log.debug("No Camera Found in viewport\nReturning aspect 1")
                 aspect = 1
         
         
@@ -366,7 +379,7 @@ class Icons:
     def get(self,name:str,type:str="Icon") -> QIcon:
         iconpath = Path(self.iconfolder) / name
         if not iconpath.exists():
-            logger(f"No icon found:\n{iconpath.as_posix()}")
+            log.warning(f"No icon found:\n{iconpath.as_posix()}")
         else:
             if type=="Icon":
                 return QIcon(iconpath.as_posix())
@@ -378,7 +391,7 @@ class Icons:
         icons = [x for x in iconpath.iterdir() if x.stem.startswith(prefix)]
         
         if len(icons)==0:
-            logger(f"No files found with current prefix: {prefix}")
+            log.warning(f"No files found with current prefix: {prefix}")
             return QIcon()
         else:
             icon = (random.choice(icons)).as_posix()

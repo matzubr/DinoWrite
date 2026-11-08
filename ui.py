@@ -402,7 +402,7 @@ class DinoWriter(QWidget):
                     flipbook_widget = w
 
         if flipbook_widget:
-            utils.logger(f"{TITLE} is already open")
+            utils.log.info(f"{TITLE} is already open")
             flipbook_widget.raise_()
             flipbook_widget.activateWindow()
             self.deleteLater()
@@ -493,7 +493,7 @@ class DinoWriter(QWidget):
             resx = utils.toInt(self.resx.text())
             resy = utils.toInt(self.resy.text())
             if resx is None or resy is None:
-                utils.logger("Set resolution before dividing it")
+                utils.log.warning("Set resolution before dividing it")
                 return
             newresx = max(round(resx*ratio), MIN_RESOLUTION_X)
             newresy = max(round(resy*ratio), MIN_RESOLUTION_Y)
@@ -545,7 +545,7 @@ class DinoWriter(QWidget):
             if not hou.ui.displayMessage(f"{Path(self.paths.get('fb_folder')).parent}\nNo folder found\nWanna create it?",buttons=("Yes","No")):
                 pfolder.mkdir(parents=True, exist_ok=True)
             else:
-                utils.logger("No folder to write in flipbooks\nChange path or create folder")
+                utils.log.warning("No folder to write in flipbooks\nChange path or create folder")
                 self.aborted = True
                 return []
 

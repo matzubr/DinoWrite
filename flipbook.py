@@ -23,7 +23,7 @@ def start(data,kwargs):
 
     frame_padding = search(r"\$F\d+",fb_name)
     if not frame_padding:
-        utils.logger("No frame padding like '$F4' in 'fb_name' found")
+        utils.log.error("No frame padding like '$F4' in 'fb_name' found")
         return 0
     else:
         frame_padding = frame_padding[0]
@@ -114,7 +114,7 @@ def start(data,kwargs):
     sequence_folder = output_filepath.parent
     files_keeped = sequence_folder.exists()
     if not files_keeped:
-        utils.logger(f"No frames were written to:\n{sequence_folder.as_posix()}")
+        utils.log.warning(f"No frames were written to:\n{sequence_folder.as_posix()}")
 
     if files_keeped and advanced['delete_incomplete_fb']:
         fb_length = int(frame_end - frame_start) + 1
@@ -126,7 +126,7 @@ def start(data,kwargs):
             if not any(sequence_folder.iterdir()):
                 sequence_folder.rmdir()
             files_keeped=False
-            utils.logger(f"Incomplete flipbook deleted ({len(files)} of {fb_length} frames):\n{sequence_folder.as_posix()}")
+            utils.log.warning(f"Incomplete flipbook deleted ({len(files)} of {fb_length} frames):\n{sequence_folder.as_posix()}")
 
     if data.get("convertvideo") and files_keeped:
         fps = utils.ffmpegFps(hou.fps())

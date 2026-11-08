@@ -40,3 +40,12 @@ def test_ffmpeg_cmd_keeps_paths_with_spaces(utils):
     ffmpeg.cmdvar = ["ffmpeg", "-i {input}", "-r {fps}", "{output}"]
     cmd = ffmpeg.cmd(fps="24", input="/My Projects/a.%04d.exr", output="/My Projects/a.mov")
     assert cmd == ["ffmpeg", "-i", "/My Projects/a.%04d.exr", "-r", "24", "/My Projects/a.mov"]
+
+
+def test_logger_has_single_handler_after_reload(utils):
+    logger = utils.getLogger()
+    utils.getLogger()
+    # pytest adds its own LogCaptureHandler, count only ours
+    ours = [h for h in logger.handlers if isinstance(h, utils._HoudiniConsoleHandler)]
+    assert len(ours) == 1
+    assert logger.name == "DinoWrite"
