@@ -4,33 +4,6 @@ import pytest
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
 
-@pytest.fixture
-def qapp():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
-@pytest.fixture
-def houdini(hou, tmp_path, monkeypatch, qapp):
-    """Fake Houdini session: $HIP/$TEMP in tmp_path, a real QWidget as Houdini main window."""
-    hip = tmp_path / "hip"
-    (tmp_path / "preview").mkdir()
-    hip.mkdir()
-    variables = {"$HIP": hip.as_posix(), "$TEMP": (tmp_path / "temp").as_posix(),
-                 "$HOUDINI_TEMP_DIR": (tmp_path / "temp").as_posix()}
-
-    def expand(text):
-        for key, value in variables.items():
-            text = text.replace(key, value)
-        return text
-
-    main_window = QtWidgets.QWidget()
-    monkeypatch.setenv("DINOWRITE_SETTINGS", (tmp_path / "user_settings.json").as_posix())
-    monkeypatch.setattr(hou, "text", type("text", (), {"expandString": staticmethod(expand)}), raising=False)
-    monkeypatch.setattr(hou, "qt", type("qt", (), {"mainWindow": staticmethod(lambda: main_window)}), raising=False)
-    yield main_window
-    main_window.deleteLater()
-
-
 def test_main_window_builds_with_qt6(houdini):
     import DinoWrite
 

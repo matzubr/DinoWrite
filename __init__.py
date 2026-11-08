@@ -23,6 +23,7 @@ _SUBMODULES = (
     "gui.qt",
     "gui.resources",
     "gui.widgets",
+    "gui.settings_dialog",
     "flipbook",
     "main",
 )

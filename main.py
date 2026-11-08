@@ -77,12 +77,13 @@ from .core.viewport import HouViewport
 from .gui import widgets
 from .gui.qt import *  # noqa: F403
 from .gui.resources import ICONS_FOLDER, Icons as _Icons
+from .gui.settings_dialog import SettingsDialog, execDialog
 
 Icons = _Icons()
 
 class TitleBar(QWidget):
     """
-    Custom titlebar with LOGO & TITLE & CLOSE BUTTON
+    Custom titlebar with LOGO & TITLE & SETTINGS & CLOSE BUTTONS
     """
 
     def __init__(self, parent):
@@ -114,8 +115,20 @@ class TitleBar(QWidget):
                                                     border-radius: 10px;}}\
                                     QPushButton::hover {{background-color:{COLORS_PALLETE['red']};}}")
         close_button.clicked.connect(self.close_window)
-        
-        layout = widgets.HLayout([window_icon,self.title,close_button],align=None)
+
+        ### SETTINGS BUTTON
+        settings_button = widgets.PushButton()
+        settings_button.setFixedSize(CLOSE_BUTTON_SIZE,CLOSE_BUTTON_SIZE)
+        settings_button.setIcon(Icons.get("gear.svg"))
+        settings_button.setIconSize(QSize(14,14))
+        settings_button.setToolTip("Settings")
+        settings_button.setCursor(Qt.PointingHandCursor)
+        settings_button.setStyleSheet(f"QPushButton {{background-color:{COLORS_PALLETE['grey']};\
+                                                    border-radius: 10px;}}\
+                                    QPushButton::hover {{background-color:{COLORS_PALLETE['orange']};}}")
+        settings_button.clicked.connect(self.parent.openSettings)
+
+        layout = widgets.HLayout([window_icon,self.title,settings_button,close_button],align=None)
         layout.setContentsMargins(15,10,15,3)
         self.setLayout(layout)
 
@@ -572,9 +585,15 @@ class DinoWriter(QWidget):
             hmsg(f"Empty line detected!\nPlease check values in:\n{string_of_empty}")
             return 0
 
-        # Create data to store
-        hou_temp = self.get_tmp()
-        data = {
+        data = self.saveState()
+
+        # Proceed hip and start flipbook script
+        self.close()
+        hou.hipFile.saveAndBackup()
+        flipbook.start(data,self.kwargs)
+
+    def collectData(self) -> dict:
+        return {
             "name": self.filename.text(),
             "resx": self.resx.text(),
             "resy": self.resy.text(),
@@ -587,14 +606,23 @@ class DinoWriter(QWidget):
             "bgimage": self.offbackgroundimage.isChecked(),
             "openfolder": self.openwritefolder.isChecked()
         }
-        data_file = Path(hou_temp, self.paths.get("tmp_data")).as_posix()
+
+    def saveState(self) -> dict:
+        """Remember current field values for the next time the window opens"""
+        data = self.collectData()
+        data_file = Path(self.get_tmp(), self.paths.get("tmp_data")).as_posix()
         with open(data_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
+        return data
 
-        # Proceed hip and start flipbook script
-        self.close()
-        hou.hipFile.saveAndBackup()
-        flipbook.start(data,self.kwargs)
+    def openSettings(self):
+        dialog = SettingsDialog(hou.qt.mainWindow())
+        if execDialog(dialog) == QDialog.Accepted:
+            # Rebuild the window with new settings, keeping current field values
+            self.saveState()
+            self.close()
+            from . import show
+            show(self.kwargs)
 
     def load_json(self, file):
         try:

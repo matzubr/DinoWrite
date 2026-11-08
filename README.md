@@ -8,7 +8,7 @@ This is a fully Python tool that allows you to write flipbooks in Houdini
 ## Features
 ---
  - Open source with comprehensive explanations
- - A lot of customization available for the UI and settings
+ - A lot of customization available for the UI and settings (settings dialog behind the gear button)
  - Keeping track of previous settings
  - Folders are automatically versioned
  - Enlarge the viewport window to improve quality
@@ -29,6 +29,10 @@ There are a bunch of little tips that I use in my daily workflow to make it easi
 
 ### Settings
 ---
+Click the gear button in the window title to edit settings: paths and file name template, video color
+(OCIO display/view, EXR color space), ffmpeg/oiiotool paths, resolution and frame range presets, ffmpeg command.
+The dialog shows which ffmpeg/oiiotool/OCIO config will be used.
+
 Defaults live in `settings.json` inside the tool folder. Your changes are saved separately to
 `$HOUDINI_USER_PREF_DIR/DinoWrite/settings.json` (or the path in `$DINOWRITE_SETTINGS`) and contain only the values
 that differ from defaults, so updating the tool doesn't wipe them.
@@ -89,7 +93,7 @@ Project layout:
 | `config.py` | settings: defaults + user overrides |
 | `flipbook.py` | recording + conversion pipeline |
 | `core/` | Houdini logic without Qt: viewport, ffmpeg, OCIO (hoiiotool), helpers, logging |
-| `gui/` | Qt: PySide6/PySide2 compat (`qt.py`), widgets, styles, icons |
+| `gui/` | Qt: PySide6/PySide2 compat (`qt.py`), widgets, settings dialog, styles, icons |
 | `settings.json` | default settings |
 
 ### Credits
