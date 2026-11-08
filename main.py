@@ -400,7 +400,8 @@ class DinoWriter(RoundedWindow, QWidget):
             return {"srgb": "sRGB", "gamma22": "gamma 2.2", "bt709": "Rec.709", "none": "as is"}.get(mode, mode)
         try:
             display, view = ocio.displayView(self.hou_viewport.getPaneTab(),
-                                             advanced.get("ocio_display", ""), advanced.get("ocio_view", ""))
+                                             advanced.get("ocio_display", ""), advanced.get("ocio_view", ""),
+                                             source=advanced.get("ocio_source", "mplay"))
         except Exception:
             display = view = ""
         if not isinstance(display, str) or not isinstance(view, str) or not display:

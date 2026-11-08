@@ -102,11 +102,13 @@ class ConversionJob:
         if not tool:
             log.warning("hoiiotool/oiiotool not found")
             return []
+        source = advanced.get("ocio_source", "mplay")
         self.display, self.view = ocio.displayView(scene_viewer, advanced.get("ocio_display", ""),
-                                                   advanced.get("ocio_view", ""))
+                                                   advanced.get("ocio_view", ""), source=source)
         if not self.display or not self.view:
             log.warning("Can't resolve OCIO display/view")
             return []
+        log.info("Video OCIO display/view: '%s' / '%s' (source: %s)", self.display, self.view, source)
         display_sequence = self.temp_folder / (self.sequence.stem + ".png")
         return ocio.displayCommands(
             tool, ocio.configPath(),
@@ -227,9 +229,16 @@ class ConversionJob:
             self.codec, progress_file,
             input=source.as_posix().replace(self.frame_padding, f"%0{self.padding}d"),
             exr_transfer="" if self.color_transform == "none" else self.color_transform,
+            color_trc=self.colorTrc(),
             **self.encode_values)
         label = f"DinoWrite: encoding video ({self.codec})" if self.codec else "DinoWrite: encoding video"
         self._processes = process.Processes([cmd], label)
+
+    def colorTrc(self) -> str:
+        """Transfer tag of the encoded video, matching how its pixels were encoded"""
+        if self.display and self.color_transform == "none" and self.ocio_commands:
+            return ocio.displayTransfer(self.display)
+        return {"bt709": "bt709", "gamma22": "gamma22"}.get(self.color_transform, "iec61966-2-1")
 
     def _finish(self, stage: str, error: str = ""):
         self.stage, self.error = stage, error

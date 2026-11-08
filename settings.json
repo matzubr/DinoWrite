@@ -35,7 +35,7 @@
         "{codec}",
         "-pix_fmt yuv420p",
         "-color_primaries bt709",
-        "-color_trc iec61966-2-1",
+        "-color_trc {color_trc}",
         "-colorspace bt709",
         "-color_range tv",
         "{output}"
@@ -46,6 +46,7 @@
         "ffmpeg_path": "",
         "video_codec": "auto",
         "color_transform": "ocio",
+        "ocio_source": "mplay",
         "ocio_display": "",
         "ocio_view": "",
         "ocio_input_space": "scene_linear",

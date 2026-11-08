@@ -48,27 +48,52 @@ def configPath() -> str:
         return hou.getenv("OCIO") or ""
 
 
-def displayView(scene_viewer=None, display: str = "", view: str = "") -> tuple:
-    """Resolve OCIO display/view: explicit settings -> current Scene Viewer -> config defaults.
+OCIO_SOURCES = ("mplay", "viewer")
+
+
+def displayView(scene_viewer=None, display: str = "", view: str = "", source: str = "mplay") -> tuple:
+    """Resolve OCIO display/view for the video.
+
+    Order: explicit display/view from settings -> source -> config defaults.
+        source "mplay"  - config default display/view: what MPlay shows the flipbook with (default)
+        source "viewer" - what the Scene Viewer shows
+    An explicit display without a view gets the first view of that display.
 
     Args:
         scene_viewer (hou.SceneViewer, optional): viewer the flipbook is recorded from
-        display (str, optional): display from settings, empty means "take from viewer"
-        view (str, optional): view from settings, empty means "take from viewer"
     """
-    if scene_viewer is not None and (not display or not view):
+    if source == "viewer" and scene_viewer is not None and not display:
         try:
             if scene_viewer.usingOCIO():
-                display = display or scene_viewer.getOCIODisplay()
+                display = scene_viewer.getOCIODisplay()
                 view = view or scene_viewer.getOCIOView()
         except (AttributeError, hou.Error) as e:
             log.warning("Can't read OCIO display/view from viewer: %s", e)
     try:
         display = display or hou.Color.ocio_defaultDisplay()
-        view = view or hou.Color.ocio_defaultView()
-    except (AttributeError, hou.Error) as e:
+        if not view:
+            views = list(hou.Color.ocio_views(display)) if display else []
+            default_view = hou.Color.ocio_defaultView()
+            view = default_view if (default_view in views or not views) else views[0]
+    except (AttributeError, TypeError, hou.Error) as e:
         log.warning("Can't read OCIO defaults: %s", e)
     return display, view
+
+
+def displayTransfer(display: str) -> str:
+    """ffmpeg color_trc tag for video encoded for an OCIO display.
+
+    Rec.1886 / Rec.709 displays encode with gamma 2.4 (tag bt709), sRGB displays with the sRGB curve.
+    Players on a computer monitor usually ignore the tag, so a Rec.1886 video looks darker there.
+    """
+    name = (display or "").lower().replace(" ", "")
+    if "srgb" in name:
+        return "iec61966-2-1"
+    if "1886" in name or "709" in name:
+        return "bt709"
+    if "gamma2.2" in name or "g22" in name:
+        return "gamma22"
+    return "iec61966-2-1"
 
 
 def displayCommand(tool: str, config: str, input_pattern: str, output_pattern: str,

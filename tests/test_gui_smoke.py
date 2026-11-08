@@ -58,7 +58,8 @@ def test_status_line_shows_record_and_video(houdini, hou, monkeypatch):
     import DinoWrite
 
     monkeypatch.setattr(hou, "Color", SimpleNamespace(ocio_defaultDisplay=lambda: "sRGB - Display",
-                                                      ocio_defaultView=lambda: "Un-tone-mapped"), raising=False)
+                                                      ocio_defaultView=lambda: "Un-tone-mapped",
+                                                      ocio_views=lambda d: ("Un-tone-mapped",)), raising=False)
     window = DinoWrite.show({})
     monkeypatch.setattr(window.hou_viewport, "getPaneTab",
                         lambda: SimpleNamespace(usingOCIO=lambda: False, qtScreenGeometry=lambda: 1 / 0))
@@ -101,7 +102,8 @@ def test_long_video_status_does_not_widen_window(houdini, hou, monkeypatch):
 
     long_view = "ACES 1.0 - SDR Video (Rec.1886 Rec.709 - Display, really long view name)"
     monkeypatch.setattr(hou, "Color", SimpleNamespace(ocio_defaultDisplay=lambda: "Rec.1886 Rec.709 - Display",
-                                                      ocio_defaultView=lambda: long_view), raising=False)
+                                                      ocio_defaultView=lambda: long_view,
+                                                      ocio_views=lambda d: (long_view,)), raising=False)
     window = DinoWrite.show({})
     monkeypatch.setattr(window.hou_viewport, "getPaneTab",
                         lambda: SimpleNamespace(usingOCIO=lambda: False, qtScreenGeometry=lambda: 1 / 0))

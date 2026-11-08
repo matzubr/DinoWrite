@@ -29,7 +29,10 @@ OPEN_AFTER = (
     ("video", "Converted video (or the folder without conversion)"),
     ("folder", "Folder with the sequence"),
 )
-FROM_VIEWER = "From viewer"
+LIKE_MPLAY = "Like MPlay (config default)"
+LIKE_VIEWER = "Like the viewer"
+DEFAULT_VIEW = "Default view"
+DISPLAY_SOURCES = {LIKE_MPLAY: "mplay", LIKE_VIEWER: "viewer"}
 FRAME_TOKEN = re.compile(r"\$F\d+")
 
 
@@ -169,7 +172,10 @@ class SettingsDialog(RoundedWindow, QDialog):
 
         self.ocio_display = QComboBox()
         self.ocio_display.setEditable(True)
-        self.ocio_display.addItems([FROM_VIEWER] + _ocioList(lambda: hou.Color.ocio_activeDisplays()))
+        self.ocio_display.addItems(list(DISPLAY_SOURCES) + _ocioList(lambda: hou.Color.ocio_activeDisplays()))
+        self.ocio_display.setToolTip("Like MPlay: config default display/view, matches how MPlay shows the flipbook.\n"
+                                     "Like the viewer: what the Scene Viewer uses (e.g. Rec.1886 looks darker\n"
+                                     "than sRGB on a computer monitor in VLC/MPC).")
         self.ocio_view = QComboBox()
         self.ocio_view.setEditable(True)
         self.ocio_input_space = QComboBox()
@@ -280,9 +286,10 @@ class SettingsDialog(RoundedWindow, QDialog):
 
         index = self.color_transform.findData(advanced.get("color_transform", "ocio"))
         self.color_transform.setCurrentIndex(max(index, 0))
-        self.ocio_display.setCurrentText(advanced.get("ocio_display") or FROM_VIEWER)
+        source_label = LIKE_VIEWER if advanced.get("ocio_source") == "viewer" else LIKE_MPLAY
+        self.ocio_display.setCurrentText(advanced.get("ocio_display") or source_label)
         self._updateViews()
-        self.ocio_view.setCurrentText(advanced.get("ocio_view") or FROM_VIEWER)
+        self.ocio_view.setCurrentText(advanced.get("ocio_view") or DEFAULT_VIEW)
         self.ocio_input_space.setCurrentText(advanced.get("ocio_input_space", ocio.DEFAULT_INPUT_SPACE))
         self.ocio_processes.setValue(int(advanced.get("ocio_processes", 0) or 0))
         self.ffmpeg_path.setText(advanced.get("ffmpeg_path", ""))
@@ -317,6 +324,8 @@ class SettingsDialog(RoundedWindow, QDialog):
         advanced["delete_incomplete_fb"] = self.delete_incomplete.isChecked()
         advanced["true_resolution"] = self.true_resolution.currentData()
         advanced["color_transform"] = self.color_transform.currentData()
+        display_text = self.ocio_display.currentText().strip()
+        advanced["ocio_source"] = DISPLAY_SOURCES.get(display_text, advanced.get("ocio_source", "mplay"))
         advanced["ocio_display"] = self._ocioValue(self.ocio_display)
         advanced["ocio_view"] = self._ocioValue(self.ocio_view)
         advanced["ocio_input_space"] = self.ocio_input_space.currentText().strip()
@@ -359,18 +368,21 @@ class SettingsDialog(RoundedWindow, QDialog):
     @staticmethod
     def _ocioValue(combo: QComboBox) -> str:
         text = combo.currentText().strip()
-        return "" if text == FROM_VIEWER else text
+        return "" if text in DISPLAY_SOURCES or text == DEFAULT_VIEW else text
 
     # ---------- reactions ----------
 
     def _updateViews(self):
         current = self.ocio_view.currentText()
         display = self._ocioValue(self.ocio_display)
+        if not display and self.ocio_display.currentText() == LIKE_MPLAY:
+            defaults = _ocioList(lambda: [hou.Color.ocio_defaultDisplay()])
+            display = defaults[0] if defaults else ""
         views = _ocioList(lambda: hou.Color.ocio_views(display)) if display else []
         self.ocio_view.blockSignals(True)
         self.ocio_view.clear()
-        self.ocio_view.addItems([FROM_VIEWER] + views)
-        self.ocio_view.setCurrentText(current or FROM_VIEWER)
+        self.ocio_view.addItems([DEFAULT_VIEW] + views)
+        self.ocio_view.setCurrentText(current if current and current in views else DEFAULT_VIEW)
         self.ocio_view.blockSignals(False)
 
     def _updateOcioEnabled(self):

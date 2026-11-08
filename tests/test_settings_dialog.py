@@ -15,6 +15,8 @@ def ocio_config(monkeypatch, hou):
         ocio_roles=lambda: ("scene_linear", "rendering"),
         ocio_spaces=lambda: ("ACEScg", "Linear Rec.709 (sRGB)"),
         ocio_configPath=lambda: "/hfs/packages/ocio/config.ocio",
+        ocio_defaultDisplay=lambda: "sRGB - Display",
+        ocio_defaultView=lambda: "ACES 1.0 - SDR Video",
     )
     monkeypatch.setattr(hou, "Color", color, raising=False)
 
@@ -38,10 +40,21 @@ def test_unchanged_dialog_collects_current_settings(dialog):
 
 def test_ocio_lists_come_from_houdini_config(dialog):
     displays = [dialog.ocio_display.itemText(i) for i in range(dialog.ocio_display.count())]
-    assert displays == ["From viewer", "sRGB - Display", "Rec.1886 Rec.709 - Display"]
-    dialog.ocio_display.setCurrentText("sRGB - Display")
+    assert displays == ["Like MPlay (config default)", "Like the viewer", "sRGB - Display",
+                        "Rec.1886 Rec.709 - Display"]
+    assert dialog.ocio_display.currentText() == "Like MPlay (config default)"
     views = [dialog.ocio_view.itemText(i) for i in range(dialog.ocio_view.count())]
-    assert views == ["From viewer", "ACES 1.0 - SDR Video", "Un-tone-mapped"]
+    assert views == ["Default view", "ACES 1.0 - SDR Video", "Un-tone-mapped"], "views of the MPlay default display"
+    dialog.ocio_display.setCurrentText("Rec.1886 Rec.709 - Display")
+    views = [dialog.ocio_view.itemText(i) for i in range(dialog.ocio_view.count())]
+    assert views == ["Default view", "Raw"]
+
+
+def test_viewer_source_is_saved(dialog, tmp_path):
+    dialog.ocio_display.setCurrentText("Like the viewer")
+    dialog.save()
+    stored = json.loads((tmp_path / "user_settings.json").read_text())
+    assert stored == {"advanced": {"ocio_source": "viewer"}}
 
 
 def test_ocio_fields_disabled_for_non_ocio_transform(dialog):

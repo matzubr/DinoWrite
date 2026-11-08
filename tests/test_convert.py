@@ -65,7 +65,7 @@ def tools(monkeypatch):
     monkeypatch.setattr(conversion.ffmpeg, "findFFmpeg", lambda custom="": "hffmpeg")
     monkeypatch.setattr(conversion.ffmpeg, "availableEncoders", lambda binary: {"h264_mf", "mpeg4"})
     monkeypatch.setattr(conversion.ocio, "findOiiotool", lambda custom="": "hoiiotool")
-    monkeypatch.setattr(conversion.ocio, "displayView", lambda viewer, display="", view="": ("sRGB", "ACES SDR"))
+    monkeypatch.setattr(conversion.ocio, "displayView", lambda viewer, display="", view="", source="mplay": ("sRGB", "ACES SDR"))
     monkeypatch.setattr(conversion.ocio, "configPath", lambda: "config.ocio")
     return FakeProcesses
 
@@ -92,6 +92,7 @@ def test_ocio_runs_in_parallel_parts_then_encodes_pngs(settings, sequence, tools
     encode = encode_run.cmds[0]
     assert encode[encode.index("-i") + 1].endswith("_ocio_tmp/shot.v001.%04d.png")
     assert "lutrgb" not in " ".join(encode), "PNGs are display-encoded already"
+    assert "color_trc=iec61966-2-1" in " ".join(encode), "sRGB display -> sRGB transfer tag"
     assert not job.temp_folder.exists(), "temp PNGs removed"
 
 

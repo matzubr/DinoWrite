@@ -46,7 +46,7 @@ EXR_TRANSFER_EXPRESSIONS = {
     "bt709":   "if(lt(val/maxval,0.018),4.5*val,maxval*(1.099*pow(val/maxval,0.45)-0.099))",
 }
 
-def videoFilter(exr_transfer: str = "") -> str:
+def videoFilter(exr_transfer: str = "", color_trc: str = "iec61966-2-1") -> str:
     """ffmpeg -vf chain: optional linear -> display transfer, then BT.709 RGB -> YUV conversion.
 
     Without explicit out_color_matrix swscale converts with BT.601 matrix while the file is tagged BT.709,
@@ -62,7 +62,7 @@ def videoFilter(exr_transfer: str = "") -> str:
     filters += ["scale=out_color_matrix=bt709:out_range=tv", "format=yuv420p",
                 # Tag frames explicitly: newer ffmpeg passes EXR "linear" trc through filters
                 # and it overrides -color_trc/-color_primaries output options
-                "setparams=color_primaries=bt709:color_trc=iec61966-2-1:colorspace=bt709:range=tv"]
+                f"setparams=color_primaries=bt709:color_trc={color_trc}:colorspace=bt709:range=tv"]
     return ",".join(filters)
 
 # Video encoders, best first. ffmpeg that ships with Houdini (hffmpeg) is built without GPL parts,
@@ -149,7 +149,7 @@ class FFmpeg:
                  "Video conversion skipped, sequence is kept")
 
     def cmd(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", exr_transfer="",
-            codec="libx264") -> list:
+            codec="libx264", color_trc="iec61966-2-1") -> list:
         """Build ffmpeg argv from template.
 
         Template entry whose placeholder is empty is skipped entirely,
@@ -166,8 +166,8 @@ class FFmpeg:
 
         # Split template entries before formatting, so paths with spaces stay single arguments
         values = dict(fps=fps, resolution=resolution, aspect=aspect,
-                    start_frame=start_frame, input=input, output=output,
-                    vf=videoFilter(exr_transfer))
+                    start_frame=start_frame, input=input, output=output, color_trc=color_trc,
+                    vf=videoFilter(exr_transfer, color_trc))
         commands = []
         for key in template:
             if key.strip() == CODEC_PLACEHOLDER:

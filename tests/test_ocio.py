@@ -26,28 +26,44 @@ def test_find_oiiotool_prefers_houdini(tmp_path, monkeypatch, hou):
     assert ocio.findOiiotool() == tool.as_posix()
 
 
-def _viewer(using_ocio=True, display="sRGB - Display", view="ACES 1.0 - SDR Video"):
+def _viewer(using_ocio=True, display="Rec.1886 Rec.709 - Display", view="ACES 1.0 - SDR Video"):
     return SimpleNamespace(usingOCIO=lambda: using_ocio, getOCIODisplay=lambda: display, getOCIOView=lambda: view)
 
 
-def _color_defaults(monkeypatch, hou, display="Default Display", view="Default View"):
-    color = SimpleNamespace(ocio_defaultDisplay=lambda: display, ocio_defaultView=lambda: view)
+VIEWS = {"sRGB - Display": ("ACES 1.0 - SDR Video", "Un-tone-mapped"),
+         "Rec.1886 Rec.709 - Display": ("ACES 1.0 - SDR Video", "Raw")}
+
+
+def _color_defaults(monkeypatch, hou, display="sRGB - Display", view="ACES 1.0 - SDR Video"):
+    color = SimpleNamespace(ocio_defaultDisplay=lambda: display, ocio_defaultView=lambda: view,
+                            ocio_views=lambda d: VIEWS.get(d, ("Only View",)))
     monkeypatch.setattr(hou, "Color", color, raising=False)
 
 
-def test_display_view_from_viewer(monkeypatch, hou):
+def test_default_source_is_mplay_config_defaults_not_viewer(monkeypatch, hou):
+    """MPlay shows the flipbook with the config default display; the viewer may use Rec.1886"""
     _color_defaults(monkeypatch, hou)
     assert ocio.displayView(_viewer()) == ("sRGB - Display", "ACES 1.0 - SDR Video")
 
 
-def test_display_view_settings_override_viewer(monkeypatch, hou):
+def test_viewer_source(monkeypatch, hou):
+    _color_defaults(monkeypatch, hou)
+    assert ocio.displayView(_viewer(), source="viewer") == ("Rec.1886 Rec.709 - Display", "ACES 1.0 - SDR Video")
+    assert ocio.displayView(_viewer(using_ocio=False), source="viewer") == ("sRGB - Display", "ACES 1.0 - SDR Video")
+
+
+def test_explicit_display_and_view(monkeypatch, hou):
     _color_defaults(monkeypatch, hou)
     assert ocio.displayView(_viewer(), view="Un-tone-mapped") == ("sRGB - Display", "Un-tone-mapped")
+    # a display without a view gets the first view of that display, not a view of another display
+    assert ocio.displayView(None, display="Other Display") == ("Other Display", "Only View")
 
 
-def test_display_view_falls_back_to_config_defaults(monkeypatch, hou):
-    _color_defaults(monkeypatch, hou)
-    assert ocio.displayView(_viewer(using_ocio=False)) == ("Default Display", "Default View")
+def test_display_transfer_tag():
+    assert ocio.displayTransfer("sRGB - Display") == "iec61966-2-1"
+    assert ocio.displayTransfer("Rec.1886 Rec.709 - Display") == "bt709"
+    assert ocio.displayTransfer("Gamma 2.2 Rec.709 - Display") == "bt709"
+    assert ocio.displayTransfer("") == "iec61966-2-1"
 
 
 def test_split_frames():
