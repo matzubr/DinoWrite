@@ -30,6 +30,7 @@ _SUBMODULES = (
     "gui.qt",
     "gui.resources",
     "gui.theme",
+    "gui.animation",
     "gui.widgets",
     "gui.frameless",
     "gui.settings_dialog",

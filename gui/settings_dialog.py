@@ -109,7 +109,7 @@ class SettingsDialog(RoundedWindow, QDialog):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(TitleBar(self, "Settings", icon_size=34, title_size=12, on_close=self.reject))
+        layout.addWidget(TitleBar(self, "Settings", icon_size=34, title_size=12, on_close=lambda: self.fadeOut(self.reject)))
         layout.addWidget(body)
 
         self.load(self.settings)

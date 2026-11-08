@@ -1,5 +1,6 @@
 """Frameless DinoWrite windows: rounded antialiased background and a draggable title bar."""
 from . import widgets
+from .animation import FadingWindow
 from .qt import *  # noqa: F403
 from .resources import Icons as _Icons
 from .theme import COLORS, TITLE_BUTTON_SIZE, WINDOW_RADIUS
@@ -7,8 +8,8 @@ from .theme import COLORS, TITLE_BUTTON_SIZE, WINDOW_RADIUS
 Icons = _Icons()
 
 
-class RoundedWindow:
-    """Mixin for QWidget/QDialog: transparent frameless window painting a rounded rect.
+class RoundedWindow(FadingWindow):
+    """Mixin for QWidget/QDialog: transparent frameless window painting a rounded rect, fades in/out.
 
     A setMask() region is 1-bit and gives jagged edges, so the window is translucent and
     paints an antialiased rounded rect itself. Children keep the background color via stylesheet.
@@ -31,7 +32,7 @@ class RoundedWindow:
 
 
 def _roundButton(icon: str, color: str, hover: str, icon_size: int = 0) -> QPushButton:
-    button = widgets.PushButton()
+    button = widgets.PushButton(radius=TITLE_BUTTON_SIZE / 2)
     button.setFixedSize(TITLE_BUTTON_SIZE, TITLE_BUTTON_SIZE)
     button.setIcon(Icons.get(icon))
     if icon_size:
@@ -66,7 +67,7 @@ class TitleBar(QWidget):
             items.append(self.settings_button)
         self.close_button = _roundButton("close.svg", COLORS["crimson"], COLORS["red"])
         self.close_button.setToolTip("Close")
-        self.close_button.clicked.connect(on_close or window.close)
+        self.close_button.clicked.connect(on_close or getattr(window, "fadeClose", window.close))
         items.append(self.close_button)
 
         layout = widgets.HLayout(items, align=None)

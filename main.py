@@ -58,7 +58,7 @@ from . import config, flipbook
 from .core import helpers
 from .core.log import hmsg, log
 from .core.viewport import HouViewport
-from .gui import widgets
+from .gui import animation, widgets
 from .gui.frameless import RoundedWindow, TitleBar
 from .gui.qt import *  # noqa: F403
 from .gui.theme import COLORS as COLORS_PALLETE
@@ -533,6 +533,8 @@ class DinoWriter(RoundedWindow, QWidget):
         return True
 
     def main(self):
+        if getattr(self, "_writing", False):
+            return 0  # already fading out to record
 
         # Check lineedits validness
         check_lines = [self.filename,self.resx,self.resy,self.framestart,self.frameend]
@@ -562,7 +564,12 @@ class DinoWriter(RoundedWindow, QWidget):
 
         data = self.saveState()
 
-        # Proceed hip and start flipbook script
+        # WRITE grows and fades out together with the window (HotBox style), then recording starts
+        self._writing = True
+        self.writebutton.playPress()
+        self.fadeOut(lambda: self.startRecording(data), duration=animation.PRESS_MS)
+
+    def startRecording(self, data: dict):
         self.close()
         hou.hipFile.saveAndBackup()
         flipbook.start(data,self.kwargs)

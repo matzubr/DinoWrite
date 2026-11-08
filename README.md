@@ -14,6 +14,7 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
  - Opens the result when done: the converted video or the folder
  - Settings dialog behind the gear button, your settings survive tool updates
  - Remembers last used values
+ - Animations in the HotBox style: windows fade in/out; on hover a white wave spreads from the cursor and the button gets lighter and a bit bigger; WRITE grows and fades out with the window, then recording starts
  - Supports multiple viewports
  - Shows existing flipbooks (can grab their name)
  - Grabs resolution from camera or divides it in half
@@ -144,7 +145,7 @@ Project layout:
 | `core/acescg.py` | EXR → ACEScg via hoiiotool (inverse of the viewer's OCIO display/view) |
 | `core/process.py` | polled external process (no threads: hou is not thread safe) |
 | `core/helpers.py`, `core/log.py` | versions, frame/name parsing, logging |
-| `gui/` | Qt: `qt.py` (PySide6/PySide2), theme, frameless windows, widgets, settings dialog, progress window |
+| `gui/` | Qt: `qt.py` (PySide6/PySide2), theme, frameless windows, widgets, animations, settings dialog, progress window |
 | `icons/`, `misc/` | icons and font |
 | `tests/` | pytest suite |
 

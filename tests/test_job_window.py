@@ -5,6 +5,7 @@ import pytest
 
 pytest.importorskip("PySide6.QtWidgets")
 from PySide6.QtWidgets import QApplication  # noqa: E402
+from conftest import waitUntil  # noqa: E402
 
 
 class FakeJob:
@@ -62,10 +63,11 @@ def test_progress_and_single_finish_callback(make_window):
     window.tick()
     window.tick()
     window.tick()
-    assert window.status.text() == "Done" and not window.isVisible()  # closes at once on success
+    assert window.status.text() == "Done"
     assert calls == []  # deferred to the event loop
     QApplication.processEvents()
     assert calls == ["done"]
+    assert waitUntil(lambda: not window.isVisible())  # fades out and closes at once on success
 
 
 def test_cancel_button_stops_job(make_window):

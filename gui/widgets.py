@@ -1,4 +1,5 @@
 from .qt import *  # noqa: F403
+from .animation import AnimatedButton
 from .resources import FONT_FILE, STYLESHEETS_FILE, Icons as _Icons, StyleSheet
 from ..core.log import log
 
@@ -166,7 +167,7 @@ class LineEdit(QLineEdit):
         else:
             self.setFont(QFont(font,size,weight=TEXT_WEIGHT["normal"]))
 
-class DropDownButton(QPushButton):
+class DropDownButton(AnimatedButton, QPushButton):
     """
     Button which dropdown context menu with a bunch of actions
     """
@@ -179,6 +180,7 @@ class DropDownButton(QPushButton):
                 parent=None) -> QPushButton:
 
         super().__init__(parent)
+        self.setupAnimation()
 
         self.setText(title if not icon else "")
         self.setFont(QFont(font,size))
@@ -289,18 +291,20 @@ class ComboBox(QComboBox):
         else:
             self.setFont(QFont(font,size,weight=TEXT_WEIGHT["normal"]))
 
-class PushButton(QPushButton):
+class PushButton(AnimatedButton, QPushButton):
     """
-    Button
+    Button with HotBox style hover/press animation (gui/animation.py)
     """
     def __init__(self,
                 label:str="",
                 font:str=MAIN_FONT,
                 size:int=MAIN_SIZE,
                 default:bool=False,
+                radius:float=5,
                 parent=None) -> QPushButton:
         
         super().__init__(parent)
+        self.setupAnimation(radius)
 
         self.setText(label)
         self.setFont(QFont(font,size))

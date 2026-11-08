@@ -3,6 +3,7 @@ import shutil
 from types import SimpleNamespace
 
 import pytest
+from conftest import waitUntil
 
 pytest.importorskip("PySide6.QtWidgets")
 
@@ -62,14 +63,16 @@ def test_write_create_makes_folder_and_starts(window, ui_calls, no_preview_folde
     ui_calls.answer = 0
     window.main()
     assert no_preview_folder.is_dir()
-    assert ui_calls.started == ["flipbook"]
+    assert ui_calls.started == [], "WRITE press animation plays first"
+    window.main()  # a second click while fading out is ignored
+    assert waitUntil(lambda: ui_calls.started == ["flipbook"])
 
 
 def test_existing_folder_is_not_asked(window, ui_calls, no_preview_folder):
     no_preview_folder.mkdir()
     window.main()
     assert ui_calls.messages == []
-    assert ui_calls.started == ["flipbook"]
+    assert waitUntil(lambda: ui_calls.started == ["flipbook"])
 
 
 def test_no_scene_viewer_shows_message_instead_of_traceback(no_preview_folder, ui_calls, monkeypatch):

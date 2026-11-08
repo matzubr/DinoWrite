@@ -51,7 +51,7 @@ class JobWindow(RoundedWindow, QWidget):
         self.setupRoundedWindow(OBJECT_NAME)
         self.setWindowTitle("DinoWrite - after recording")
 
-        title = TitleBar(self, "DinoWrite", icon_size=30, title_size=11, on_close=self.close)
+        title = TitleBar(self, "DinoWrite", icon_size=30, title_size=11, on_close=self.fadeClose)
         self.name = widgets.Label(job.title, weight="bold")
         self.status = widgets.Label(job.status)
         self.bar = QProgressBar()
@@ -129,7 +129,7 @@ class JobWindow(RoundedWindow, QWidget):
                 # From the event loop, not from inside this tick: opening the result may take a moment
                 QTimer.singleShot(0, self.on_finished)
         if self.job.succeeded:
-            self.close()  # the result opens right away, nothing to read here; failures stay open
+            self.fadeClose()  # the result opens right away, nothing to read here; failures stay open
 
     def cancelOrClose(self):
         if self.job.finished:

@@ -75,3 +75,18 @@ def houdini(hou, tmp_path, monkeypatch, qapp):
     monkeypatch.setattr(hou, "qt", type("qt", (), {"mainWindow": staticmethod(lambda: main_window)}), raising=False)
     yield main_window
     main_window.deleteLater()
+
+
+def waitUntil(condition, timeout: float = 2.0) -> bool:
+    """Process Qt events until condition() is true (animations finish asynchronously)"""
+    import time
+
+    from PySide6.QtWidgets import QApplication
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        QApplication.processEvents()
+        if condition():
+            return True
+        time.sleep(0.01)
+    return condition()
