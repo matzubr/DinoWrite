@@ -8,8 +8,8 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
 ---
  - Folders are automatically versioned (`v001`, `v002`, ...)
  - True resolution: a 4K flipbook on a 2K monitor is recorded in a torn off copy of the viewer sized to 4K (bigger than the screen) instead of stretching the viewport
- - Convert the sequence to video with ffmpeg that ships with Houdini, with progress and cancel (Esc)
- - Video colors match the viewer: OCIO display/view applied with `hoiiotool`
+ - Convert the sequence to video in the background with ffmpeg that ships with Houdini: Houdini stays usable, a small window shows progress and can cancel
+ - Video colors match the viewer: OCIO display/view applied with `hoiiotool`, several processes in parallel
  - Status line shows how the flipbook will be recorded and encoded, flipbook name is checked while typing
  - Opens the result when done: the converted video or the folder
  - Settings dialog behind the gear button, your settings survive tool updates
@@ -83,6 +83,15 @@ Some OSes (macOS, some Linux window managers) don't allow windows bigger than th
 
 The video is encoded with BT.709 matrix and tagged as BT.709 / sRGB.
 
+`advanced.ocio_processes`: how many hoiiotool processes run in parallel on parts of the frame range
+(0 = half of the CPU cores, max 8). Alpha is dropped before the transform.
+
+### Video codec
+`advanced.video_codec`: `auto` (default) or an encoder name. ffmpeg that ships with Houdini (`hffmpeg`) is built
+without GPL parts and has **no libx264**, so `auto` asks ffmpeg which encoders it has and tries
+`libx264` → `h264_videotoolbox` (macOS) → `h264_mf` (Windows) → `h264_nvenc` / `h264_amf` / `h264_qsv` → `mpeg4`,
+moving to the next one if an encoder fails. The `{codec}` line in the ffmpeg command expands to the encoder arguments.
+
 ### Tools lookup
 - ffmpeg: `advanced.ffmpeg_path` → `$PDG_FFMPEG` → `$HFS/bin/hffmpeg` (ships with Houdini) → system PATH
 - oiiotool: `advanced.oiiotool_path` → `$HFS/bin/hoiiotool` → `hoiiotool` / `oiiotool` in system PATH
@@ -128,9 +137,10 @@ Project layout:
 | `core/viewport.py` | Scene Viewer wrapper, torn off copy at true resolution |
 | `core/ffmpeg.py` | ffmpeg lookup, command and color filters |
 | `core/ocio.py` | OCIO display/view via hoiiotool |
-| `core/process.py` | running tools with Houdini progress/cancel |
+| `core/conversion.py` | conversion job: OCIO → encode (encoder fallback) → cleanup, polled without blocking |
+| `core/process.py` | non-blocking process groups, blocking run with Houdini progress/cancel |
 | `core/helpers.py`, `core/log.py` | versions, frame/name parsing, logging |
-| `gui/` | Qt: `qt.py` (PySide6/PySide2), widgets, settings dialog, styles |
+| `gui/` | Qt: `qt.py` (PySide6/PySide2), theme, frameless windows, widgets, settings dialog, progress window |
 | `icons/`, `misc/` | icons and font |
 | `tests/` | pytest suite |
 
