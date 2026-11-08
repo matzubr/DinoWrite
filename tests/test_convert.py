@@ -31,8 +31,8 @@ class FakeProcesses:
     launched = []
     exit_code = staticmethod(lambda cmd: 0)
 
-    def __init__(self, cmds, label):
-        self.cmds, self.label = cmds, label
+    def __init__(self, cmd, label):
+        self.cmds, self.label = [cmd], label
         FakeProcesses.launched.append(self)
 
     def poll(self):
@@ -55,7 +55,7 @@ def _codec(cmd):
 def tools(monkeypatch):
     FakeProcesses.launched = []
     FakeProcesses.exit_code = staticmethod(lambda cmd: 0)
-    monkeypatch.setattr(conversion.process, "Processes", FakeProcesses)
+    monkeypatch.setattr(conversion.process, "Process", FakeProcesses)
     monkeypatch.setattr(conversion.ffmpeg, "findFFmpeg", lambda custom="": "hffmpeg")
     monkeypatch.setattr(conversion.ffmpeg, "availableEncoders", lambda binary: {"h264_mf", "mpeg4"})
     return FakeProcesses

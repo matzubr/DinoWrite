@@ -75,7 +75,7 @@ class ConversionJob:
         self.stage = PENDING
         self.error = ""
         self.codec = None
-        self._processes = None
+        self._process = None
         self._progress_dir = None
 
     # ---------- state ----------
@@ -124,7 +124,7 @@ class ConversionJob:
             self.start()
         if self.finished:
             return True
-        result = self._processes.poll()
+        result = self._process.poll()
         if result is None:
             return False
         if result:
@@ -139,8 +139,8 @@ class ConversionJob:
     def cancel(self):
         if self.finished:
             return
-        if self._processes is not None:
-            self._processes.cancel()
+        if self._process is not None:
+            self._process.cancel()
         self._finish(CANCELLED)
 
     def runBlocking(self):
@@ -164,7 +164,7 @@ class ConversionJob:
         progress_file.unlink(missing_ok=True)
         cmd = self.converter.encodeCommand(self.codec, progress_file, **self.encode_values)
         label = f"DinoWrite: encoding video ({self.codec})" if self.codec else "DinoWrite: encoding video"
-        self._processes = process.Processes([cmd], label)
+        self._process = process.Process(cmd, label)
 
     def _finish(self, stage: str, error: str = ""):
         self.stage, self.error = stage, error
