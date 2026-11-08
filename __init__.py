@@ -26,6 +26,7 @@ _SUBMODULES = (
     "core.viewport",
     "core.ocio",
     "core.conversion",
+    "core.diagnose",
     "config",
     "gui.qt",
     "gui.resources",
@@ -68,3 +69,14 @@ def show(kwargs=None, reload=False):
 
     log.info("DinoWrite %s from %s", __version__, _PACKAGE_DIR.as_posix())
     return DinoWriter(kwargs or {})
+
+
+def diagnose_colors(path, display="", view=""):
+    """Color check: writes the first EXR of a flipbook folder through several input color spaces.
+
+    Compare the PNGs in <folder>/_color_check with MPlay, then set the matching space in
+    Settings -> Video -> EXR color space. See core/diagnose.py.
+    """
+    from .core.diagnose import diagnoseColors
+
+    return diagnoseColors(path, display=display, view=view)
