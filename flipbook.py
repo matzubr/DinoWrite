@@ -41,7 +41,9 @@ def start(data,kwargs):
     if frame_start is None or frame_end is None:
         hmsg(f"Can't evaluate frame range:\n{data.get('framestart')} - {data.get('frameend')}", level="error")
         return 0
-    frame_end = max(frame_start,frame_end)
+    if frame_end < frame_start:
+        hmsg(f"End frame {frame_end} is before start frame {frame_start}", level="error")
+        return 0
 
     # Default path to write flipbook
     write_folder = Path(fb_folder.format(name=file_name)).resolve()
@@ -105,8 +107,8 @@ def start(data,kwargs):
             files_keeped=False
             log.warning(f"Incomplete flipbook deleted ({len(files)} of {fb_length} frames):\n{sequence_folder.as_posix()}")
 
-    def finished(video):
-        if data.get("openfolder"):
+    def finished(video, cancelled=False):
+        if data.get("openfolder") and not cancelled:
             openResult(advanced.get("open_after", "video"), video, sequence_folder, write_folder)
 
     if not (data.get("convertvideo") and files_keeped):
@@ -122,7 +124,8 @@ def start(data,kwargs):
     if hou.isUIAvailable():
         # Conversion runs in the background: Houdini stays usable, progress/cancel in a small window
         from .gui.job_window import JobWindow
-        JobWindow(job, on_finished=lambda: finished(job.video if job.succeeded else None))
+        JobWindow(job, on_finished=lambda: finished(job.video if job.succeeded else None,
+                                                    cancelled=job.stage == conversion.CANCELLED))
     else:
         finished(job.runBlocking())
 
@@ -198,6 +201,8 @@ def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
     """Record flipbook, always returning viewers to their original state"""
     recorder = viewport
     prev_color_scheme = None
+    prev_background_image = None
+    was_maximized = viewport.isMaximized()
     try:
         recorder = chooseRecorder(viewport, resolution, mode)
         if recorder is viewport:
@@ -210,6 +215,7 @@ def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
             prev_color_scheme = recorder.colorScheme()
             recorder.colorScheme("dark")
         if hide_background_image:
+            prev_background_image = recorder.displayBackgroundImage()
             recorder.displayBackgroundImage(False)
 
         warmUp(recorder, flipbook_options)
@@ -217,10 +223,10 @@ def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
     finally:
         if prev_color_scheme is not None:
             recorder.colorScheme(prev_color_scheme)
-        if hide_background_image:
-            recorder.displayBackgroundImage()
+        if prev_background_image is not None:
+            recorder.displayBackgroundImage(prev_background_image)
         recorder.close()
-        viewport.maximize_viewport(False)
+        viewport.maximize_viewport(was_maximized)
 
 
 def warmUp(recorder, flipbook_options):

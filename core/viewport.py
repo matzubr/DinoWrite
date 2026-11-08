@@ -213,6 +213,9 @@ class HouViewport:
         if self.viewport_pane is not None:
             self.viewport_pane.setIsMaximized(type)
 
+    def isMaximized(self) -> bool:
+        return self.viewport_pane is not None and self.viewport_pane.isMaximized()
+
     def colorScheme(self,color=None):
         """Get current viewport color scheme (hou.viewportColorScheme) or set it.
 
@@ -228,10 +231,22 @@ class HouViewport:
         else:
             self.settings.setColorScheme(scheme[color] if isinstance(color,str) else color)
 
-    def displayBackgroundImage(self,type=True):
+    def displayBackgroundImage(self,type=None):
+        """Background image visibility: get it (no argument) or set it"""
+        if type is None:
+            return self.settings.displayBackgroundImage()
         self.settings.setDisplayBackgroundImage(type)
 
     def cameraResolution(self):
+        """Resolution of the viewport camera (LOP: render settings prim), viewport size without one"""
+        try:
+            return self._cameraResolution()
+        except Exception as e:  # noqa: BLE001 - no stage, light as camera, ...: never break the window
+            log.warning("Can't read camera resolution, using viewport size: %s", e)
+            size = self.viewport_panetab.curViewport().size()
+            return (size[2], size[3])
+
+    def _cameraResolution(self):
         network = self.viewport_panetab.pwd().childTypeCategory().name()
         viewport = self.viewport_panetab.curViewport()
 
@@ -275,6 +290,13 @@ class HouViewport:
         return tuple((resx, resy))
     
     def cameraPixelAspect(self):
+        try:
+            return float(self._cameraPixelAspect())
+        except Exception as e:  # noqa: BLE001 - no stage, light as camera, ...: WRITE must still work
+            log.warning("Can't read camera pixel aspect, using 1: %s", e)
+            return 1.0
+
+    def _cameraPixelAspect(self):
         network = self.viewport_panetab.pwd().childTypeCategory().name()
         viewport = self.viewport_panetab.curViewport()
 

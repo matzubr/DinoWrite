@@ -50,6 +50,8 @@ class FakeViewer:
         self.tear_off_result, self.tear_off_error = tear_off_result, tear_off_error
         self.events = []
         self.scheme = "grey"
+        self.background_image = True
+        self.maximized = False
 
     def viewportSize(self):
         return self.size
@@ -61,6 +63,9 @@ class FakeViewer:
     def maximize_viewport(self, on=True):
         self.events.append(("maximize", on))
 
+    def isMaximized(self):
+        return self.maximized
+
     def tearOff(self, resolution):
         if self.tear_off_error:
             raise self.tear_off_error
@@ -71,7 +76,9 @@ class FakeViewer:
             return self.scheme
         self.events.append(("scheme", color))
 
-    def displayBackgroundImage(self, on=True):
+    def displayBackgroundImage(self, on=None):
+        if on is None:
+            return self.background_image
         self.events.append(("bgimage", on))
 
     def startFlipbook(self, options):
@@ -266,3 +273,12 @@ def test_settle_waits_for_stable_size(monkeypatch):
     monkeypatch.setattr(viewer, "viewportSize", lambda: next(sizes))
     monkeypatch.setattr(viewport_mod.time, "sleep", lambda s: None)
     assert viewer.settle() == (3840, 2160)
+
+
+def test_record_restores_background_image_and_maximize_as_they_were():
+    """Background image was off and the pane maximized before: both stay that way after recording"""
+    viewer = FakeViewer((2560, 1400))
+    viewer.background_image, viewer.maximized = False, True
+    flipbook.record(viewer, FakeOptions(), (1920, 1080), mode="auto", hide_background_image=True)
+    assert ("bgimage", True) not in viewer.events
+    assert viewer.events[-1] == ("maximize", True)
