@@ -139,6 +139,14 @@ def test_solaris_never_tears_off():
     assert flipbook.chooseRecorder(viewer, (3840, 2160), "auto") is viewer
 
 
+def test_solaris_keeps_color_scheme():
+    viewer = FakeViewer((2560, 1400))
+    viewer.isLop = lambda: True
+    flipbook.record(viewer, FakeOptions(), (1920, 1080), black_background=True)
+    assert not any(event[0] == "scheme" for event in viewer.events)
+    assert ("flipbook",) in viewer.events
+
+
 def test_tear_off_failure_falls_back_to_viewport():
     viewer = FakeViewer((100, 100), tear_off_error=RuntimeError("no clone"))
     assert flipbook.chooseRecorder(viewer, (3840, 2160), "always") is viewer

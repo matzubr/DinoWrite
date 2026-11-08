@@ -217,7 +217,11 @@ def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
             viewport.settle()
 
         # Remember viewer state before changing it
-        if black_background:
+        if black_background and getattr(recorder, "isLop", lambda: False)():
+            # Houdini bug: changing the color scheme in Solaris breaks the lighting menu ("(no entries)")
+            # and the flipbook falls back to Normal Lighting
+            log.warning("Solaris viewer: black background skipped, changing the color scheme resets its lighting")
+        elif black_background:
             prev_color_scheme = recorder.colorScheme()
             recorder.colorScheme("dark")
         if hide_background_image:
