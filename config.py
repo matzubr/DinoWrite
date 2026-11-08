@@ -30,6 +30,11 @@ def userSettingsPath() -> Path:
     return Path.home() / ".dinowrite" / "settings.json"
 
 
+def lastUsedPath() -> Path:
+    """Last used window values, next to the user settings (temp folders get cleaned)"""
+    return userSettingsPath().parent / "last_used.json"
+
+
 def _readJson(path: Path) -> dict:
     try:
         with open(path, encoding="utf-8") as f:

@@ -126,8 +126,6 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.fb_name.setToolTip("File name template: {name}, {version}, {fileformat} and a frame token like $F4")
         self.fb_video_ext = QComboBox()
         self.fb_video_ext.addItems(self.settings["formats"]["video_exts"])
-        self.tmp_folder = QLineEdit()
-        self.tmp_folder.setToolTip("Where the window remembers last used values")
         self.delete_incomplete = QCheckBox("Delete flipbook if it doesn't cover the frame range")
         self.true_resolution = QComboBox()
         for key, label in TRUE_RESOLUTION:
@@ -140,7 +138,6 @@ class SettingsDialog(RoundedWindow, QDialog):
         form.addRow("Flipbooks folder", self.fb_folder)
         form.addRow("File name", self.fb_name)
         form.addRow("Video extension", self.fb_video_ext)
-        form.addRow("Temp folder", self.tmp_folder)
         form.addRow("Record viewer", self.true_resolution)
         form.addRow("", self.delete_incomplete)
         return self._page(form)
@@ -229,7 +226,6 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.fb_folder.setText(paths.get("fb_folder", ""))
         self.fb_name.setText(paths.get("fb_name", ""))
         self.fb_video_ext.setCurrentText(paths.get("fb_video_ext", "mov"))
-        self.tmp_folder.setText(paths.get("tmp_folder", ""))
         self.delete_incomplete.setChecked(bool(advanced.get("delete_incomplete_fb")))
         self.true_resolution.setCurrentIndex(max(self.true_resolution.findData(advanced.get("true_resolution", "auto")), 0))
 
@@ -254,7 +250,6 @@ class SettingsDialog(RoundedWindow, QDialog):
         paths["fb_folder"] = self.fb_folder.text().strip()
         paths["fb_name"] = self.fb_name.text().strip()
         paths["fb_video_ext"] = self.fb_video_ext.currentText()
-        paths["tmp_folder"] = self.tmp_folder.text().strip()
         if "{name}" not in paths["fb_folder"] and "{name}" not in paths["fb_name"]:
             errors.append("Flipbooks folder or file name must contain {name}")
         if not FRAME_TOKEN.search(paths["fb_name"]):

@@ -152,7 +152,7 @@ class DinoWriter(RoundedWindow, QWidget):
         self.addresolution = settingsfile["custom_resolution"]
         self.addframerange = settingsfile["custom_framerange"]
 
-        self.data = self.load_json(Path(self.get_tmp(), self.paths.get("tmp_data")))
+        self.data = self.load_json(config.lastUsedPath())
         self.initUI()
 
     def initUI(self):
@@ -534,14 +534,6 @@ class DinoWriter(RoundedWindow, QWidget):
         pfolder.mkdir(parents=True, exist_ok=True)
         return True
 
-    def get_tmp(self):
-        hou_temp = Path(hou.text.expandString(self.paths.get("tmp_folder")))
-
-        if not hou_temp.exists():
-            hou_temp.mkdir(parents=True, exist_ok=True)
-
-        return hou_temp.as_posix()
-
     def main(self):
 
         # Check lineedits validness
@@ -595,7 +587,8 @@ class DinoWriter(RoundedWindow, QWidget):
     def saveState(self) -> dict:
         """Remember current field values for the next time the window opens"""
         data = self.collectData()
-        data_file = Path(self.get_tmp(), self.paths.get("tmp_data")).as_posix()
+        data_file = config.lastUsedPath()
+        data_file.parent.mkdir(parents=True, exist_ok=True)
         with open(data_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
         return data

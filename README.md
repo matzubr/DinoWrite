@@ -57,7 +57,7 @@ Click the gear button in the window title. Tabs:
 
 | tab | what |
 |---|---|
-| General | flipbooks folder, file name template, temp folder, recording viewer, incomplete flipbook cleanup |
+| General | flipbooks folder, file name template, video extension, recording viewer, incomplete flipbook cleanup |
 | Video | video codec, ffmpeg path (shows which ffmpeg and encoders are found), sequence cleanup, what to open after writing |
 | Presets | resolution and frame range presets for the dropdown menus |
 | ffmpeg command | the ffmpeg command template |
@@ -65,6 +65,7 @@ Click the gear button in the window title. Tabs:
 Defaults live in `settings.json` inside the tool folder. Your changes are saved separately to
 `$HOUDINI_USER_PREF_DIR/DinoWrite/settings.json` (or the path in `$DINOWRITE_SETTINGS`) and contain only the values
 that differ from defaults, so updating the tool doesn't wipe them. "Reset to defaults" removes that file.
+Last used window values are kept next to it in `last_used.json`.
 
 ### Recording viewer
 `advanced.true_resolution`:
