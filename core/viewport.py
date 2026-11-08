@@ -68,30 +68,48 @@ def _usdValue(attribute):
 _DISPLAY_SETS = ("SceneObject", "SelectedObject", "GhostObject", "DisplayModel", "CurrentModel", "TemplateModel")
 
 
+def _settingPairs(obj):
+    """Getter names that have a setter: lighting / setLighting, ..."""
+    for setter_name in dir(obj):
+        if setter_name.startswith("set") and len(setter_name) > 3 and setter_name[3].isupper():
+            getter_name = setter_name[3].lower() + setter_name[4:]
+            if callable(getattr(obj, getter_name, None)):
+                yield getter_name, setter_name
+
+
+def snapshotSettings(obj) -> dict:
+    """{getter name: value} of every option readable without arguments"""
+    values = {}
+    for getter_name, _ in _settingPairs(obj):
+        try:
+            values[getter_name] = getattr(obj, getter_name)()
+        except Exception:  # noqa: BLE001 - getters with arguments, unsupported options
+            continue
+    return values
+
+
+def restoreSettings(obj, snapshot: dict, skip=()) -> list:
+    """Set every option that differs from the snapshot back. Returns the names that were changed."""
+    restored = []
+    for getter_name, setter_name in _settingPairs(obj):
+        if getter_name not in snapshot or getter_name in skip:
+            continue
+        try:
+            if getattr(obj, getter_name)() != snapshot[getter_name]:
+                getattr(obj, setter_name)(snapshot[getter_name])
+                restored.append(getter_name)
+        except Exception:  # noqa: BLE001 - read-only/unsupported options
+            continue
+    return restored
+
+
 def copySettings(source, target) -> int:
     """Copy every value that has a getter/setter pair (lighting() / setLighting(...)) from source to target.
 
     A cloned Scene Viewer starts with default display options (Normal Lighting etc.): the torn off copy
-    must look like the viewer the user set up. Pairs that need arguments or fail are skipped.
-    Returns how many values were changed.
+    must look like the viewer the user set up. Returns how many values were changed.
     """
-    changed = 0
-    for setter_name in dir(target):
-        if not setter_name.startswith("set") or len(setter_name) < 4 or not setter_name[3].isupper():
-            continue
-        getter_name = setter_name[3].lower() + setter_name[4:]
-        getter = getattr(source, getter_name, None)
-        target_getter = getattr(target, getter_name, None)
-        if not callable(getter) or not callable(target_getter):
-            continue
-        try:
-            value = getter()
-            if target_getter() != value:
-                getattr(target, setter_name)(value)
-                changed += 1
-        except Exception:  # noqa: BLE001 - getters with arguments, read-only/unsupported options
-            continue
-    return changed
+    return len(restoreSettings(target, snapshotSettings(source)))
 
 
 def copyViewportSettings(source, target):
@@ -269,6 +287,30 @@ class HouViewport:
 
     def isMaximized(self) -> bool:
         return self.viewport_pane is not None and self.viewport_pane.isMaximized()
+
+    def _displaySets(self):
+        display_set_type = getattr(hou, "displaySetType", None)
+        for name in _DISPLAY_SETS:
+            set_type = getattr(display_set_type, name, None)
+            if set_type is not None:
+                try:
+                    yield name, self.settings.displaySet(set_type)
+                except Exception:  # noqa: BLE001
+                    continue
+
+    def snapshot(self) -> dict:
+        """Display options of the viewport and its display sets, to restore them later"""
+        result = {"": snapshotSettings(self.settings)}
+        for name, display_set in self._displaySets():
+            result[name] = snapshotSettings(display_set)
+        return result
+
+    def restore(self, snapshot: dict, skip=()) -> list:
+        """Put back every display option that differs from the snapshot. Returns 'name' / 'set.name' changed."""
+        restored = restoreSettings(self.settings, snapshot.get("", {}), skip)
+        for name, display_set in self._displaySets():
+            restored += [f"{name}.{option}" for option in restoreSettings(display_set, snapshot.get(name, {}), skip)]
+        return restored
 
     def colorScheme(self,color=None):
         """Get current viewport color scheme (hou.viewportColorScheme) or set it.
