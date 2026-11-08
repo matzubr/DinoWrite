@@ -10,7 +10,6 @@ WINDOW_WIDTH = 380
 WINDOW_HEIGHT = 165
 MARGIN = 20
 POLL_MS = 200
-AUTO_CLOSE_MS = 5000
 OBJECT_NAME = "DinoWriteJobWindow"
 
 PROGRESS_STYLE = f"""
@@ -124,14 +123,13 @@ class JobWindow(RoundedWindow, QWidget):
         color = COLORS["green"] if self.job.succeeded else COLORS["crimson"]
         self.status.setStyleSheet(f"color: {color}; background: transparent;")
         self.status.setToolTip(getattr(self.job, "error", ""))
-        if self.job.succeeded:
-            self.bar.setValue(1000)
-            QTimer.singleShot(AUTO_CLOSE_MS, self.close)
         if not self._notified:
             self._notified = True
             if self.on_finished is not None:
-                # After the final state is painted: opening the result may take a moment
+                # From the event loop, not from inside this tick: opening the result may take a moment
                 QTimer.singleShot(0, self.on_finished)
+        if self.job.succeeded:
+            self.close()  # the result opens right away, nothing to read here; failures stay open
 
     def cancelOrClose(self):
         if self.job.finished:

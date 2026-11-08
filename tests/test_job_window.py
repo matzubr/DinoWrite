@@ -44,7 +44,10 @@ def make_window(houdini):
         return window
     yield make
     for window in windows:
-        window.deleteLater()
+        try:
+            window.deleteLater()
+        except RuntimeError:  # closed on success, already deleted
+            pass
 
 
 def test_progress_and_single_finish_callback(make_window):
@@ -58,8 +61,8 @@ def test_progress_and_single_finish_callback(make_window):
     window.tick()
     window.tick()
     window.tick()
-    assert window.status.text() == "Done" and window.button.text() == "Close"
-    assert calls == []  # deferred: the final state is painted first
+    assert window.status.text() == "Done" and not window.isVisible()  # closes at once on success
+    assert calls == []  # deferred to the event loop
     QApplication.processEvents()
     assert calls == ["done"]
 
