@@ -84,3 +84,18 @@ def test_display_commands_split_range_and_threads(monkeypatch):
     cmds = ocio.displayCommands("hoiiotool", "", "a.#.exr", "a.#.png", (1, 100), 4, "sRGB", "View", processes=4)
     assert [c[c.index("--frames") + 1] for c in cmds] == ["1-25", "26-50", "51-75", "76-100"]
     assert all(c[1:3] == ["--threads", "4"] for c in cmds)
+
+
+ACES_CG_SPACES = ["ACES2065-1", "ACEScc", "ACEScct", "ACEScg", "Linear P3-D65", "Linear Rec.2020",
+                  "Linear Rec.709 (sRGB)", "sRGB - Texture", "Raw"]
+
+
+def test_input_space_auto_finds_linear_rec709():
+    assert ocio.inputSpace("auto", ACES_CG_SPACES) == "Linear Rec.709 (sRGB)"
+    assert ocio.inputSpace("", ["ACEScg", "lin_srgb"]) == "lin_srgb"
+    assert ocio.inputSpace("auto", ["Utility - Linear - sRGB", "ACES - ACEScg"]) == "Utility - Linear - sRGB"
+
+
+def test_input_space_setting_wins_and_fallback():
+    assert ocio.inputSpace("ACEScg", ACES_CG_SPACES) == "ACEScg"
+    assert ocio.inputSpace("auto", ["ACEScg", "sRGB - Texture"]) == ocio.FALLBACK_INPUT_SPACE

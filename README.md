@@ -77,7 +77,7 @@ Some OSes (macOS, some Linux window managers) don't allow windows bigger than th
 
 ### Video colors
 `advanced.color_transform`:
-- `ocio` (default): the same OCIO display/view as the Scene Viewer, applied by `hoiiotool` that ships with Houdini (`$HFS/bin/hoiiotool`). Display/view can be fixed with `ocio_display` / `ocio_view`, EXR color space with `ocio_input_space` (default: `scene_linear` role). Falls back to `srgb` if hoiiotool is missing or fails
+- `ocio` (default): the same OCIO display/view as the Scene Viewer, applied by `hoiiotool` that ships with Houdini (`$HFS/bin/hoiiotool`). Display/view can be fixed with `ocio_display` / `ocio_view`, EXR color space with `ocio_input_space` (default `auto`: the config's linear Rec.709 space, the viewport renders in it; the `scene_linear` role of ACES configs is ACEScg and gives a darker, cyan video). Falls back to `srgb` if hoiiotool is missing or fails
 - `srgb`, `gamma22`, `bt709`: fixed transfer for linear EXR
 - `none`: pass pixels as is. Use it if your EXRs are already display-encoded (video looks washed out)
 

@@ -3,6 +3,7 @@
 Linear EXR flipbook -> OCIO display/view (same as the viewer shows) -> 16-bit PNG sequence -> ffmpeg.
 """
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -10,8 +11,30 @@ import hou
 
 from .log import log
 
-# Color space of flipbook EXRs. scene_linear is an OCIO role, resolved by the active config
-DEFAULT_INPUT_SPACE = "scene_linear"
+# Color space of flipbook EXRs. "auto": the viewport renders in linear Rec.709 primaries (checked against MPlay:
+# Linear Rec.709 -> ACES SDR matches it, the scene_linear role of ACES configs is ACEScg and gives a cyan cast)
+AUTO_INPUT_SPACE = "auto"
+DEFAULT_INPUT_SPACE = AUTO_INPUT_SPACE
+FALLBACK_INPUT_SPACE = "scene_linear"
+# Linear Rec.709 names in common configs: ACES cg/studio config, OCIO builtin aliases, older configs
+LINEAR_REC709_PATTERN = r"^(linear[ _]rec\.?709|lin_rec709|lin_srgb|linear[ _]srgb|linear$|utility - linear - (srgb|rec\.?709))"
+
+
+def inputSpace(setting: str = DEFAULT_INPUT_SPACE, spaces=None) -> str:
+    """OCIO color space of flipbook EXRs: the setting, or for "auto" the config's linear Rec.709 space"""
+    setting = (setting or "").strip()
+    if setting and setting != AUTO_INPUT_SPACE:
+        return setting
+    if spaces is None:
+        try:
+            spaces = list(hou.Color.ocio_spaces())
+        except Exception:
+            spaces = []
+    for space in spaces:
+        if re.search(LINEAR_REC709_PATTERN, space, re.IGNORECASE):
+            return space
+    log.warning("No linear Rec.709 color space in the OCIO config, EXR is read as '%s'", FALLBACK_INPUT_SPACE)
+    return FALLBACK_INPUT_SPACE
 
 
 def findOiiotool(custom_path: str = "") -> str:
@@ -98,7 +121,7 @@ def displayTransfer(display: str) -> str:
 
 def displayCommand(tool: str, config: str, input_pattern: str, output_pattern: str,
                    frame_range: tuple, padding: int, display: str, view: str,
-                   input_space: str = DEFAULT_INPUT_SPACE, threads: int = 0) -> list:
+                   input_space: str = FALLBACK_INPUT_SPACE, threads: int = 0) -> list:
     """Build oiiotool argv for a frame range.
 
     Patterns use '#' as the frame number wildcard, padding is set by --framepadding:
@@ -145,7 +168,7 @@ def splitFrames(start: int, end: int, parts: int) -> list:
 
 def displayCommands(tool: str, config: str, input_pattern: str, output_pattern: str,
                     frame_range: tuple, padding: int, display: str, view: str,
-                    input_space: str = DEFAULT_INPUT_SPACE, processes: int = 0) -> list:
+                    input_space: str = FALLBACK_INPUT_SPACE, processes: int = 0) -> list:
     """One oiiotool command per part of the frame range, to run in parallel"""
     start, end = int(frame_range[0]), int(frame_range[1])
     count = processCount(processes, end - start + 1)

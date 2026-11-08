@@ -50,7 +50,7 @@
         "ocio_source": "mplay",
         "ocio_display": "",
         "ocio_view": "",
-        "ocio_input_space": "scene_linear",
+        "ocio_input_space": "auto",
         "oiiotool_path": "",
         "ocio_processes": 0,
         "delete_incomplete_fb":false,

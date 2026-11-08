@@ -180,8 +180,10 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.ocio_view.setEditable(True)
         self.ocio_input_space = QComboBox()
         self.ocio_input_space.setEditable(True)
+        self.ocio_input_space.setToolTip("Color space of the flipbook EXR. auto: linear Rec.709 of the OCIO config,\n"
+                                         "the viewport renders in it (matches MPlay)")
         self.ocio_input_space.addItems(
-            _ocioList(lambda: hou.Color.ocio_roles()) + _ocioList(lambda: hou.Color.ocio_spaces()))
+            [ocio.AUTO_INPUT_SPACE] + _ocioList(lambda: hou.Color.ocio_roles()) + _ocioList(lambda: hou.Color.ocio_spaces()))
         self.ocio_processes = QSpinBox()
         self.ocio_processes.setRange(0, 64)
         self.ocio_processes.setSpecialValueText("auto (half of CPU cores, max 8)")

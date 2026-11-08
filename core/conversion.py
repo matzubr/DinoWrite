@@ -112,8 +112,9 @@ class ConversionJob:
         if not self.display or not self.view:
             log.warning("Can't resolve OCIO display/view")
             return []
-        log.info("Video OCIO display/view: '%s' / '%s' (source: %s; viewer: %s; config default: %s)",
-                 self.display, self.view, source, _describe(ocio.displayView(scene_viewer, source="viewer")),
+        input_space = ocio.inputSpace(advanced.get("ocio_input_space", ocio.DEFAULT_INPUT_SPACE))
+        log.info("Video OCIO: '%s' -> '%s' / '%s' (source: %s; viewer: %s; config default: %s)",
+                 input_space, self.display, self.view, source, _describe(ocio.displayView(scene_viewer, source="viewer")),
                  _describe(ocio.displayView(None)))
         display_sequence = self.temp_folder / (self.sequence.stem + ".png")
         return ocio.displayCommands(
@@ -121,7 +122,7 @@ class ConversionJob:
             input_pattern=self.sequence.as_posix().replace(self.frame_padding, "#"),
             output_pattern=display_sequence.as_posix().replace(self.frame_padding, "#"),
             frame_range=self.frame_range, padding=self.padding, display=self.display, view=self.view,
-            input_space=advanced.get("ocio_input_space", ocio.DEFAULT_INPUT_SPACE),
+            input_space=input_space,
             processes=advanced.get("ocio_processes", 0))
 
     # ---------- state ----------
