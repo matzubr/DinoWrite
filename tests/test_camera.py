@@ -13,8 +13,11 @@ class Attr:
     def __init__(self, name, value):
         self.name, self.value = name, value
 
-    def Get(self):
-        return self.value if self.value is not None else FALLBACKS.get(self.name)
+    def Get(self, time=None):
+        value = self.value
+        if isinstance(value, dict):  # {"default": ..., frame: ...} like resolution + resolution.timeSamples
+            value = value.get(time, value["default"]) if time is not None else value["default"]
+        return value if value is not None else FALLBACKS.get(self.name)
 
     def HasAuthoredValue(self):
         return self.value is not None
@@ -106,6 +109,16 @@ def test_lop_uses_the_stage_render_settings_not_a_fallback_resolution():
     # only an unauthored one: camera aspect, not 2048x1080
     view = viewer(prims=[other, CAMERA_16_9])
     assert view.cameraResolution() == (1295, 728)
+
+
+def test_lop_resolution_time_samples_are_read_at_the_current_frame(hou, monkeypatch):
+    """Karma 'Set Width, Compute Height from Camera' writes resolution as time samples over a default
+    (2048, 1080); the viewer shows the sample: 1400x788"""
+    monkeypatch.setattr(hou, "frame", lambda: 4.0, raising=False)
+    karma = Prim("RenderSettings", "/Render/rendersettings",
+                 resolution={"default": (2048, 1080), 4.0: (1400, 788)}, camera=("/cam",))
+    view = viewer(prims=[karma, CAMERA_16_9], metadata={"renderSettingsPrimPath": "/Render/rendersettings"})
+    assert view.cameraResolution() == (1400, 788)
 
 
 def test_lop_without_camera_uses_viewport():

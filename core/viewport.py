@@ -55,6 +55,15 @@ def fitPanel(set_size, get_panel_size, get_viewport_size, resolution: tuple,
         process_events()
     return tuple(get_viewport_size())
 
+def _usdValue(attribute):
+    """USD attribute value at the current frame. Karma Render Settings writes a resolution computed from the
+    camera as time samples; without a time USD returns the default value (e.g. 2048x1080 instead of 1400x788)."""
+    try:
+        return attribute.Get(hou.frame())
+    except Exception:  # noqa: BLE001 - no current frame (tests, no UI): the default value
+        return attribute.Get()
+
+
 class HouViewport:
     def __init__(self,kwargs) -> None:
         # Started from a viewer (its shelf/hotkey): that one. From a shelf: the first Scene Viewer
@@ -298,7 +307,7 @@ class HouViewport:
         # Only an authored value: the schema fallback is 2048x1080, not what the viewer shows
         if not attribute or not attribute.HasAuthoredValue():
             return None
-        resolution = attribute.Get()
+        resolution = _usdValue(attribute)
         log.info("Camera resolution from %s: %sx%s", prim.GetPath(), resolution[0], resolution[1])
         return (int(resolution[0]), int(resolution[1]))
 
@@ -309,8 +318,8 @@ class HouViewport:
         prim = stage.GetPrimAtPath(path) if stage and path else None
         if not prim or not prim.IsValid():
             return None
-        horizontal = prim.GetAttribute("horizontalAperture").Get()
-        vertical = prim.GetAttribute("verticalAperture").Get()
+        horizontal = _usdValue(prim.GetAttribute("horizontalAperture"))
+        vertical = _usdValue(prim.GetAttribute("verticalAperture"))
         return float(horizontal) / float(vertical) if horizontal and vertical else None
 
     def cameraAspect(self):
@@ -336,7 +345,7 @@ class HouViewport:
         if self._isLop():
             prim = self._renderSettingsPrim()
             attribute = prim.GetAttribute("pixelAspectRatio") if prim else None
-            aspect = attribute.Get() if attribute and attribute.HasAuthoredValue() else None
+            aspect = _usdValue(attribute) if attribute and attribute.HasAuthoredValue() else None
             return float(aspect) if aspect else 1.0
         camera = self.viewport_panetab.curViewport().camera()
         return camera.evalParm("aspect") if camera else 1.0
