@@ -2,10 +2,8 @@
 import copy
 import re
 
-import hou
-
 from .. import config
-from ..core import ffmpeg, ocio
+from ..core import ffmpeg
 from ..core.log import log
 from . import widgets
 from .frameless import RoundedWindow, TitleBar
@@ -13,14 +11,6 @@ from .qt import *  # noqa: F403
 from .resources import ICONS_FOLDER
 from .theme import COLORS
 
-COLOR_TRANSFORMS = (
-    ("auto", "Auto: like MPlay after recording (sRGB; OCIO for beauty pass)"),
-    ("ocio", "OCIO display/view (scene linear EXR)"),
-    ("srgb", "sRGB transfer"),
-    ("gamma22", "Gamma 2.2"),
-    ("bt709", "Rec.709 transfer"),
-    ("none", "None (sequence is already display-encoded)"),
-)
 TRUE_RESOLUTION = (
     ("auto", "Separate viewer window when resolution is bigger than the viewport"),
     ("always", "Always record in a separate viewer window"),
@@ -30,10 +20,6 @@ OPEN_AFTER = (
     ("video", "Converted video (or the folder without conversion)"),
     ("folder", "Folder with the sequence"),
 )
-LIKE_MPLAY = "Like MPlay (config default)"
-LIKE_VIEWER = "Like the viewer"
-DEFAULT_VIEW = "Default view"
-DISPLAY_SOURCES = {LIKE_MPLAY: "mplay", LIKE_VIEWER: "viewer"}
 FRAME_TOKEN = re.compile(r"\$F\d+")
 
 
@@ -81,13 +67,6 @@ def bodyStyle() -> str:
         QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
         """,
     ])
-
-
-def _ocioList(getter, *args) -> list:
-    try:
-        return list(getter(*args))
-    except Exception:  # hou.Color OCIO calls fail without a valid config
-        return []
 
 
 class SettingsDialog(RoundedWindow, QDialog):
@@ -167,43 +146,16 @@ class SettingsDialog(RoundedWindow, QDialog):
         return self._page(form)
 
     def _videoTab(self) -> QWidget:
-        self.color_transform = QComboBox()
-        for key, label in COLOR_TRANSFORMS:
-            self.color_transform.addItem(label, key)
-
-        self.ocio_display = QComboBox()
-        self.ocio_display.setEditable(True)
-        self.ocio_display.addItems(list(DISPLAY_SOURCES) + _ocioList(lambda: hou.Color.ocio_activeDisplays()))
-        self.ocio_display.setToolTip("Like MPlay: config default display/view, matches how MPlay shows the flipbook.\n"
-                                     "Like the viewer: what the Scene Viewer uses (e.g. Rec.1886 looks darker\n"
-                                     "than sRGB on a computer monitor in VLC/MPC).")
-        self.ocio_view = QComboBox()
-        self.ocio_view.setEditable(True)
-        self.ocio_input_space = QComboBox()
-        self.ocio_input_space.setEditable(True)
-        self.ocio_input_space.setToolTip("Color space of the flipbook EXR. auto: linear Rec.709 of the OCIO config,\n"
-                                         "the viewport renders in it (matches MPlay)")
-        self.ocio_input_space.addItems(
-            [ocio.AUTO_INPUT_SPACE] + _ocioList(lambda: hou.Color.ocio_roles()) + _ocioList(lambda: hou.Color.ocio_spaces()))
-        self.ocio_processes = QSpinBox()
-        self.ocio_processes.setRange(0, 64)
-        self.ocio_processes.setSpecialValueText("auto (half of CPU cores, max 8)")
-        self.ocio_processes.setToolTip("hoiiotool processes running in parallel on parts of the frame range")
-        self.ocio_display.currentTextChanged.connect(self._updateViews)
-        self.color_transform.currentIndexChanged.connect(self._updateOcioEnabled)
-
         self.video_codec = QComboBox()
         self.video_codec.setEditable(True)
         self.video_codec.addItems(["auto"] + list(ffmpeg.CODECS))
         self.video_codec.setToolTip("auto: the best encoder this ffmpeg has (Houdini's hffmpeg has no libx264),\n"
                                     "falls back to the next one if it fails")
         self.ffmpeg_path, ffmpeg_row = self._pathRow("Empty: $PDG_FFMPEG, $HFS/bin/hffmpeg, system PATH")
-        self.oiiotool_path, oiiotool_row = self._pathRow("Empty: $HFS/bin/hoiiotool, system PATH")
         self.tools_status = QLabel()
         # no word wrap: QFormLayout gets the height of a wrapped label wrong and rows overlap
         self.tools_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.ffmpeg_path.editingFinished.connect(self._updateToolsStatus)
-        self.oiiotool_path.editingFinished.connect(self._updateToolsStatus)
 
         self.delete_input = QCheckBox("Delete image sequence after successful conversion")
         self.open_after = QComboBox()
@@ -211,14 +163,8 @@ class SettingsDialog(RoundedWindow, QDialog):
             self.open_after.addItem(label, key)
 
         form = QFormLayout()
-        form.addRow("Color", self.color_transform)
-        form.addRow("OCIO display", self.ocio_display)
-        form.addRow("OCIO view", self.ocio_view)
-        form.addRow("EXR color space", self.ocio_input_space)
-        form.addRow("OCIO processes", self.ocio_processes)
         form.addRow("Video codec", self.video_codec)
         form.addRow("ffmpeg", ffmpeg_row)
-        form.addRow("oiiotool", oiiotool_row)
         form.addRow("", self.tools_status)
         form.addRow("", self.delete_input)
         form.addRow("Open result", self.open_after)
@@ -287,17 +233,8 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.delete_incomplete.setChecked(bool(advanced.get("delete_incomplete_fb")))
         self.true_resolution.setCurrentIndex(max(self.true_resolution.findData(advanced.get("true_resolution", "auto")), 0))
 
-        index = self.color_transform.findData(advanced.get("color_transform", "auto"))
-        self.color_transform.setCurrentIndex(max(index, 0))
-        source_label = LIKE_VIEWER if advanced.get("ocio_source") == "viewer" else LIKE_MPLAY
-        self.ocio_display.setCurrentText(advanced.get("ocio_display") or source_label)
-        self._updateViews()
-        self.ocio_view.setCurrentText(advanced.get("ocio_view") or DEFAULT_VIEW)
-        self.ocio_input_space.setCurrentText(advanced.get("ocio_input_space", ocio.DEFAULT_INPUT_SPACE))
-        self.ocio_processes.setValue(int(advanced.get("ocio_processes", 0) or 0))
         self.ffmpeg_path.setText(advanced.get("ffmpeg_path", ""))
         self.video_codec.setCurrentText(advanced.get("video_codec", "auto") or "auto")
-        self.oiiotool_path.setText(advanced.get("oiiotool_path", ""))
         self.delete_input.setChecked(bool(advanced.get("conversion_delete_input_sequence")))
         self.open_after.setCurrentIndex(max(self.open_after.findData(advanced.get("open_after", "video")), 0))
 
@@ -306,7 +243,6 @@ class SettingsDialog(RoundedWindow, QDialog):
             f"{name} = {value}" for name, value in settings.get("custom_framerange", {}).items()))
         self.ffmpeg_cmd.setPlainText("\n".join(settings.get("ffmpeg_cmd", [])))
 
-        self._updateOcioEnabled()
         self._updateToolsStatus()
 
     def collect(self) -> tuple:
@@ -326,16 +262,8 @@ class SettingsDialog(RoundedWindow, QDialog):
 
         advanced["delete_incomplete_fb"] = self.delete_incomplete.isChecked()
         advanced["true_resolution"] = self.true_resolution.currentData()
-        advanced["color_transform"] = self.color_transform.currentData()
-        display_text = self.ocio_display.currentText().strip()
-        advanced["ocio_source"] = DISPLAY_SOURCES.get(display_text, advanced.get("ocio_source", "mplay"))
-        advanced["ocio_display"] = self._ocioValue(self.ocio_display)
-        advanced["ocio_view"] = self._ocioValue(self.ocio_view)
-        advanced["ocio_input_space"] = self.ocio_input_space.currentText().strip()
-        advanced["ocio_processes"] = self.ocio_processes.value()
         advanced["ffmpeg_path"] = self.ffmpeg_path.text().strip()
         advanced["video_codec"] = self.video_codec.currentText().strip() or "auto"
-        advanced["oiiotool_path"] = self.oiiotool_path.text().strip()
         advanced["conversion_delete_input_sequence"] = self.delete_input.isChecked()
         advanced["open_after"] = self.open_after.currentData()
 
@@ -368,41 +296,14 @@ class SettingsDialog(RoundedWindow, QDialog):
     def _lines(edit: QPlainTextEdit) -> list:
         return [line.strip() for line in edit.toPlainText().splitlines() if line.strip()]
 
-    @staticmethod
-    def _ocioValue(combo: QComboBox) -> str:
-        text = combo.currentText().strip()
-        return "" if text in DISPLAY_SOURCES or text == DEFAULT_VIEW else text
-
     # ---------- reactions ----------
-
-    def _updateViews(self):
-        current = self.ocio_view.currentText()
-        display = self._ocioValue(self.ocio_display)
-        if not display and self.ocio_display.currentText() == LIKE_MPLAY:
-            defaults = _ocioList(lambda: [hou.Color.ocio_defaultDisplay()])
-            display = defaults[0] if defaults else ""
-        views = _ocioList(lambda: hou.Color.ocio_views(display)) if display else []
-        self.ocio_view.blockSignals(True)
-        self.ocio_view.clear()
-        self.ocio_view.addItems([DEFAULT_VIEW] + views)
-        self.ocio_view.setCurrentText(current if current and current in views else DEFAULT_VIEW)
-        self.ocio_view.blockSignals(False)
-
-    def _updateOcioEnabled(self):
-        enabled = self.color_transform.currentData() in ("auto", "ocio")  # auto uses OCIO for beauty pass
-        for widget in (self.ocio_display, self.ocio_view, self.ocio_input_space, self.ocio_processes,
-                       self.oiiotool_path):
-            widget.setEnabled(enabled)
 
     def _updateToolsStatus(self):
         ffmpeg_found = ffmpeg.findFFmpeg(self.ffmpeg_path.text().strip())
-        oiiotool_found = ocio.findOiiotool(self.oiiotool_path.text().strip())
         encoders = ffmpeg.codecCandidates("auto", ffmpeg.availableEncoders(ffmpeg_found)) if ffmpeg_found else []
         self.tools_status.setText(
             f"ffmpeg: {ffmpeg_found or 'NOT FOUND'}\n"
-            f"encoders (auto order): {', '.join(encoders) or 'unknown'}\n"
-            f"oiiotool: {oiiotool_found or 'NOT FOUND (OCIO falls back to sRGB)'}\n"
-            f"OCIO config: {ocio.configPath() or 'unknown'}")
+            f"encoders (auto order): {', '.join(encoders) or 'unknown'}")
         # the form layout sized this row before the text was set: reserve height for every line
         lines = self.tools_status.text().count("\n") + 1
         self.tools_status.setMinimumHeight(self.tools_status.fontMetrics().lineSpacing() * lines + 4)

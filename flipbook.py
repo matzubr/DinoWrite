@@ -78,7 +78,8 @@ def start(data,kwargs):
     flipbook_options.frameRange(tuple((frame_start, frame_end)))
     flipbook_options.frameIncrement(1)
     flipbook_options.appendFramesToCurrent(False)
-    # flipbook_options.beautyPassOnly(True)
+    # The viewport as seen (not the scene linear beauty pass): the video is encoded like MPlay shows it
+    flipbook_options.beautyPassOnly(False)
     # flipbook_options.renderAllViewports(False)
     flipbook_options.antialias(hou.flipbookAntialias.HighQuality)
 
@@ -111,14 +112,13 @@ def start(data,kwargs):
     if not (data.get("convertvideo") and files_keeped):
         return finished(None)
 
-    job = conversion.ConversionJob(settingsfile, viewport.getPaneTab(),
+    job = conversion.ConversionJob(settingsfile,
                                    sequence=output_filepath,
                                    frame_padding=frame_padding,
                                    frame_range=(frame_start, frame_end),
                                    resolution=file_resolution,
                                    pixel_aspect=float(data.get("aspect") or 1),
-                                   video_ext=fb_video_ext,
-                                   beauty_pass=conversion.isBeautyPass(flipbook_options))
+                                   video_ext=fb_video_ext)
     if hou.isUIAvailable():
         # Conversion runs in the background: Houdini stays usable, progress/cancel in a small window
         from .gui.job_window import JobWindow
@@ -241,11 +241,8 @@ def warmUp(recorder, flipbook_options):
         log.warning("Warm-up frame failed: %s", e)
 
 
-def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_range: tuple,
+def convert(settings: dict, sequence: Path, frame_padding: str, frame_range: tuple,
             resolution: tuple, pixel_aspect: float, video_ext: str):
     """Convert blocking (no UI / scripts). Returns the written video path or None."""
-    pane = viewport.getPaneTab()
-    beauty_pass = conversion.isBeautyPass(pane.flipbookSettings()) if pane is not None else False
-    job = conversion.ConversionJob(settings, pane, sequence, frame_padding, frame_range,
-                                   resolution, pixel_aspect, video_ext, beauty_pass=beauty_pass)
-    return job.runBlocking()
+    return conversion.ConversionJob(settings, sequence, frame_padding, frame_range,
+                                    resolution, pixel_aspect, video_ext).runBlocking()

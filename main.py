@@ -61,7 +61,7 @@ import hou
 import json
 
 from . import config, flipbook
-from .core import conversion, helpers, ocio
+from .core import helpers
 from .core.log import hmsg, log
 from .core.viewport import HouViewport
 from .gui import widgets
@@ -144,7 +144,7 @@ class DinoWriter(RoundedWindow, QWidget):
 
         self.cameraname = widgets.Label("Camera: {camera}".format(camera=self.hou_viewport.cameraName()))
         self.ramusage =   widgets.Label("RAM Usage: {ramusage}")
-        # Elided labels: long OCIO names must not widen the fixed size window
+        # Elided labels: long status text must not widen the fixed size window
         self.statusline = widgets.ElidedLabel("")
         self.videoline = widgets.ElidedLabel("")
         self.seqname = widgets.ColorfulLabel()
@@ -392,32 +392,10 @@ class DinoWriter(RoundedWindow, QWidget):
         return resolution[0] <= size.width() and resolution[1] <= size.height()
 
     def videoStatus(self) -> str:
-        advanced = self.settings["advanced"]
         if self.fileformat.currentText() != "exr":
             return "as is"
-        mode = advanced.get("color_transform", "auto")
-        if mode == "auto":
-            try:
-                beauty_pass = conversion.isBeautyPass(self.hou_viewport.getPaneTab().flipbookSettings())
-            except Exception:  # noqa: BLE001
-                beauty_pass = False
-            mode = conversion.autoTransform(beauty_pass)
-            if mode == "srgb":
-                self.videoline.setExtraToolTip("Viewport flipbook: sRGB, same as MPlay shows it after recording")
-                return "sRGB (like MPlay)"
-        if mode != "ocio":
-            return {"srgb": "sRGB", "gamma22": "gamma 2.2", "bt709": "Rec.709", "none": "as is"}.get(mode, mode)
-        try:
-            display, view = ocio.displayView(self.hou_viewport.getPaneTab(),
-                                             advanced.get("ocio_display", ""), advanced.get("ocio_view", ""),
-                                             source=advanced.get("ocio_source", "mplay"))
-        except Exception:
-            display = view = ""
-        if not isinstance(display, str) or not isinstance(view, str) or not display:
-            return "OCIO"
-        # full names are long ("sRGB - Display / ACES 1.0 - SDR Video"): view in the line, both in the tooltip
-        self.videoline.setExtraToolTip(f"OCIO display: {display}\nOCIO view: {view}")
-        return f"OCIO {view}"
+        self.videoline.setExtraToolTip("EXR is encoded with the sRGB curve: the video looks like MPlay after recording")
+        return "sRGB (like MPlay)"
 
     def updateFileFormat(self):
         state = self.convertvideo.isChecked()

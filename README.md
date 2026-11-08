@@ -9,7 +9,7 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
  - Folders are automatically versioned (`v001`, `v002`, ...)
  - True resolution: a 4K flipbook on a 2K monitor is recorded in a torn off copy of the viewer sized to 4K (bigger than the screen) instead of stretching the viewport
  - Convert the sequence to video in the background with ffmpeg that ships with Houdini: Houdini stays usable, a small window shows progress and can cancel
- - Video colors match MPlay after recording; scene linear (beauty pass) flipbooks get the OCIO display/view via `hoiiotool`, several processes in parallel
+ - Video colors match MPlay right after recording
  - Status line shows how the flipbook will be recorded and encoded, flipbook name is checked while typing
  - Opens the result when done: the converted video or the folder
  - Settings dialog behind the gear button, your settings survive tool updates
@@ -59,7 +59,7 @@ Click the gear button in the window title. Tabs:
 | tab | what |
 |---|---|
 | General | flipbooks folder, file name template, temp folder, recording viewer, incomplete flipbook cleanup |
-| Video | color transform, OCIO display/view/EXR color space, ffmpeg and oiiotool paths (shows which ones are found), sequence cleanup, what to open after writing |
+| Video | video codec, ffmpeg path (shows which ffmpeg and encoders are found), sequence cleanup, what to open after writing |
 | Presets | resolution and frame range presets for the dropdown menus |
 | ffmpeg command | the ffmpeg command template |
 
@@ -76,21 +76,14 @@ that differ from defaults, so updating the tool doesn't wipe them. "Reset to def
 Some OSes (macOS, some Linux window managers) don't allow windows bigger than the screen: then a warning is logged and the image is scaled as before. On HiDPI screens a 4K viewport fits into a smaller window.
 
 ### Video colors
-`advanced.color_transform`:
-- `auto` (default): the video looks like MPlay right after recording.
-  A regular viewport flipbook stores the viewport image as you see it (display transform already applied), linearized
-  with the inverse sRGB curve, so it's encoded back with the `srgb` transfer, like the EXR Transfer Func of the
-  FFmpeg Encode Video TOP. A "Beauty pass only" flipbook is scene linear and gets `ocio`
-- `ocio`: OCIO display/view applied by `hoiiotool` that ships with Houdini (`$HFS/bin/hoiiotool`), for scene linear EXR. Display/view: like MPlay (config default), like the Scene Viewer, or fixed with `ocio_display` / `ocio_view`. EXR color space: `ocio_input_space` (default `auto`: the config's linear Rec.709 space). Falls back to `srgb` if hoiiotool is missing or fails
-- `srgb`, `gamma22`, `bt709`: fixed transfer for linear EXR
-- `none`: pass pixels as is. Use it if your EXRs are already display-encoded (video looks washed out)
+The video looks like MPlay right after recording. A viewport flipbook stores the viewport image as you see it
+(display transform, e.g. ACES SDR, already applied), linearized with the inverse sRGB curve when written to EXR.
+DinoWrite encodes it back with the sRGB curve, like "EXR Transfer Func" of the FFmpeg Encode Video TOP. JPG/PNG are
+encoded as is. "Beauty pass only" is switched off while recording, so EXRs are always the viewport as seen.
 
 Opening the EXR in MPlay later (File → Open) applies the OCIO view on top and looks darker than MPlay right after recording.
 
 The video is encoded with BT.709 matrix and tagged as BT.709 / sRGB.
-
-`advanced.ocio_processes`: how many hoiiotool processes run in parallel on parts of the frame range
-(0 = half of the CPU cores, max 8). Alpha is dropped before the transform.
 
 ### Video codec
 `advanced.video_codec`: `auto` (default) or an encoder name. ffmpeg that ships with Houdini (`hffmpeg`) is built
@@ -100,7 +93,6 @@ moving to the next one if an encoder fails. The `{codec}` line in the ffmpeg com
 
 ### Tools lookup
 - ffmpeg: `advanced.ffmpeg_path` → `$PDG_FFMPEG` → `$HFS/bin/hffmpeg` (ships with Houdini) → system PATH
-- oiiotool: `advanced.oiiotool_path` → `$HFS/bin/hoiiotool` → `hoiiotool` / `oiiotool` in system PATH
 
 ### Attentions
 - After a successful conversion the image sequence is deleted (`conversion_delete_input_sequence`, on by default). Only frames of that sequence are removed, other files in the folder are kept. Cancelled or failed conversion always keeps the sequence
@@ -142,8 +134,7 @@ Project layout:
 | `core/` | Houdini logic without Qt |
 | `core/viewport.py` | Scene Viewer wrapper, torn off copy at true resolution |
 | `core/ffmpeg.py` | ffmpeg lookup, command and color filters |
-| `core/ocio.py` | OCIO display/view via hoiiotool |
-| `core/conversion.py` | conversion job: OCIO → encode (encoder fallback) → cleanup, polled without blocking |
+| `core/conversion.py` | conversion job: encode (encoder fallback) → cleanup, polled without blocking |
 | `core/process.py` | non-blocking process groups, blocking run with Houdini progress/cancel |
 | `core/helpers.py`, `core/log.py` | versions, frame/name parsing, logging |
 | `gui/` | Qt: `qt.py` (PySide6/PySide2), theme, frameless windows, widgets, settings dialog, progress window |

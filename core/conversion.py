@@ -1,27 +1,25 @@
 """Flipbook sequence -> video conversion as a pollable job.
 
-Everything that needs hou (fps, OCIO display/view, tool lookup) is resolved in the constructor,
-on the main thread. Then the job only polls external processes: the GUI calls step() from a QTimer,
-so Houdini stays usable while hoiiotool/ffmpeg work. Without UI, runBlocking() does the same in a loop.
+Everything that needs hou (fps, ffmpeg lookup) is resolved in the constructor, on the main thread.
+Then the job only polls ffmpeg: the GUI calls step() from a QTimer, so Houdini stays usable while it
+encodes. Without UI, runBlocking() does the same in a loop. Encoders are tried one by one until one works.
 
-Stages:
-    ocio    - hoiiotool OCIO display transform, several processes on parts of the frame range
-    encode  - ffmpeg, trying encoders one by one until one works
+Color: a viewport flipbook stores the viewport image as you see it (display transform already applied),
+linearized with the inverse sRGB curve when written to EXR. MPlay shows it right after recording with
+plain sRGB, so EXR is encoded back with the sRGB curve (like "EXR Transfer Func" of the FFmpeg Encode
+Video TOP). JPG/PNG are already sRGB and are encoded as is.
 """
-import shutil
 import tempfile
 import time
 from pathlib import Path
 
 import hou
 
-from . import ffmpeg, helpers, ocio, process
+from . import ffmpeg, helpers, process
 from .log import log
 
-COLOR_TRANSFORMS = ("auto", "ocio", "srgb", "gamma22", "bt709", "none")
-OCIO_TEMP_FOLDER = "_ocio_tmp"
-
-PENDING, OCIO, ENCODE, DONE, FAILED, CANCELLED = "pending", "ocio", "encode", "done", "failed", "cancelled"
+PENDING, ENCODE, DONE, FAILED, CANCELLED = "pending", "encode", "done", "failed", "cancelled"
+COLOR_TRC = "iec61966-2-1"  # sRGB
 
 
 def sequenceFiles(sequence: Path, frame_padding: str) -> list:
@@ -34,48 +32,21 @@ def sequenceFiles(sequence: Path, frame_padding: str) -> list:
             and f.name[len(prefix):len(f.name) - len(suffix)].isdigit()]
 
 
-def _describe(display_view: tuple) -> str:
-    return " / ".join(part or "?" for part in display_view)
-
-
 def videoPath(sequence: Path, frame_padding: str, video_ext: str) -> Path:
     """name.v001.$F4.exr -> name.v001.mov (works for name_$F4.exr too)"""
     return sequence.parent / (sequence.name.partition(frame_padding)[0].rstrip("._-") + f".{video_ext}")
 
 
-def autoTransform(beauty_pass: bool) -> str:
-    """Color transform for advanced.color_transform = auto"""
-    return "ocio" if beauty_pass else "srgb"
-
-
-def isBeautyPass(flipbook_settings) -> bool:
-    """'Beauty pass only' flipbook: scene linear EXR. Unknown -> False (regular viewport flipbook)"""
-    try:
-        return bool(flipbook_settings.beautyPassOnly())
-    except Exception:  # noqa: BLE001 - old Houdini / mocked settings
-        return False
-
-
 class ConversionJob:
     """Convert a written flipbook sequence to video.
-
-    Color (advanced.color_transform):
-        auto    - (default) srgb for regular viewport flipbooks, ocio for "Beauty pass only" ones.
-                  A viewport flipbook stores the viewport image as seen (display transform already applied),
-                  linearized with the inverse sRGB curve: MPlay shows it right after recording with plain sRGB,
-                  so sRGB gives the same picture. OCIO display/view on top would tone map it a second time.
-                  A beauty pass flipbook is scene linear and needs the OCIO display/view.
-        ocio    - OCIO display/view of the viewer via hoiiotool (falls back to srgb if it isn't available/fails)
-        srgb, gamma22, bt709 - fixed transfer function for linear EXR
-        none    - pass pixel values as is (for display-encoded sequences)
 
     Args:
         sequence (Path): flipbook output path with frame token, like .../name.v001.$F4.exr
         frame_padding (str): frame token in the file name, like "$F4"
     """
 
-    def __init__(self, settings: dict, scene_viewer, sequence: Path, frame_padding: str, frame_range: tuple,
-                 resolution: tuple, pixel_aspect: float, video_ext: str, beauty_pass: bool = False):
+    def __init__(self, settings: dict, sequence: Path, frame_padding: str, frame_range: tuple,
+                 resolution: tuple, pixel_aspect: float, video_ext: str):
         advanced = settings["advanced"]
         self.sequence = Path(sequence)
         self.frame_padding = frame_padding
@@ -84,68 +55,28 @@ class ConversionJob:
         self.total_frames = self.frame_range[1] - self.frame_range[0] + 1
         self.video = videoPath(self.sequence, frame_padding, video_ext)
         self.delete_input = bool(advanced.get("conversion_delete_input_sequence"))
-        self.temp_folder = self.sequence.parent / OCIO_TEMP_FOLDER
+        linear = self.sequence.suffix.lower() == ".exr"
 
         self.encode_values = dict(
             fps=helpers.ffmpegFps(hou.fps()),
             resolution=f"{resolution[0]}x{resolution[1]}",
             aspect=resolution[0] / resolution[1] * pixel_aspect,
             start_frame=self.frame_range[0],
-            output=self.video.as_posix())
+            input=self.sequence.as_posix().replace(frame_padding, f"%0{self.padding}d"),
+            output=self.video.as_posix(),
+            exr_transfer="srgb" if linear else "",
+            color_trc=COLOR_TRC,
+            comment="DinoWrite: sRGB, like MPlay after recording")
 
         self.converter = ffmpeg.FFmpeg(cmd=settings["ffmpeg_cmd"], binary=advanced.get("ffmpeg_path", ""),
                                        codec=advanced.get("video_codec", "auto"))
         self.codecs = self.converter.codecs() if self.converter.available else []
-
-        is_exr = self.sequence.suffix.lower() == ".exr"
-        self.color_transform = advanced.get("color_transform", "auto") if is_exr else "none"
-        if self.color_transform not in COLOR_TRANSFORMS:
-            log.warning("Unknown color_transform '%s', expected one of: %s. Using auto",
-                        self.color_transform, ", ".join(COLOR_TRANSFORMS))
-            self.color_transform = "auto"
-        if self.color_transform == "auto":
-            self.color_transform = autoTransform(beauty_pass)
-            log.info("Video color: %s (%s)", self.color_transform,
-                     "beauty pass flipbook, scene linear" if beauty_pass else "viewport flipbook, like MPlay")
-        self.ocio_commands = []
-        self.display = self.view = ""
-        if self.color_transform == "ocio":
-            self.ocio_commands = self._planOcio(advanced, scene_viewer)
-            if not self.ocio_commands:
-                log.warning("OCIO transform unavailable, falling back to srgb transfer")
-                self.color_transform = "srgb"
 
         self.stage = PENDING
         self.error = ""
         self.codec = None
         self._processes = None
         self._progress_dir = None
-
-    # ---------- planning ----------
-
-    def _planOcio(self, advanced: dict, scene_viewer) -> list:
-        tool = ocio.findOiiotool(advanced.get("oiiotool_path", ""))
-        if not tool:
-            log.warning("hoiiotool/oiiotool not found")
-            return []
-        source = advanced.get("ocio_source", "mplay")
-        self.display, self.view = ocio.displayView(scene_viewer, advanced.get("ocio_display", ""),
-                                                   advanced.get("ocio_view", ""), source=source)
-        if not self.display or not self.view:
-            log.warning("Can't resolve OCIO display/view")
-            return []
-        input_space = ocio.inputSpace(advanced.get("ocio_input_space", ocio.DEFAULT_INPUT_SPACE))
-        log.info("Video OCIO: '%s' -> '%s' / '%s' (source: %s; viewer: %s; config default: %s)",
-                 input_space, self.display, self.view, source, _describe(ocio.displayView(scene_viewer, source="viewer")),
-                 _describe(ocio.displayView(None)))
-        display_sequence = self.temp_folder / (self.sequence.stem + ".png")
-        return ocio.displayCommands(
-            tool, ocio.configPath(),
-            input_pattern=self.sequence.as_posix().replace(self.frame_padding, "#"),
-            output_pattern=display_sequence.as_posix().replace(self.frame_padding, "#"),
-            frame_range=self.frame_range, padding=self.padding, display=self.display, view=self.view,
-            input_space=input_space,
-            processes=advanced.get("ocio_processes", 0))
 
     # ---------- state ----------
 
@@ -157,15 +88,9 @@ class ConversionJob:
     def succeeded(self) -> bool:
         return self.stage == DONE
 
-    def ocioFramesDone(self) -> int:
-        """Frames already written by all hoiiotool processes together"""
-        return len(list(self.temp_folder.iterdir())) if self.temp_folder.exists() else 0
-
     @property
     def progress(self) -> float:
-        """Progress of the current stage 0..1"""
-        if self.stage == OCIO:
-            return min(self.ocioFramesDone() / max(self.total_frames, 1), 1.0)
+        """0..1"""
         if self.stage == ENCODE and self._progress_dir:
             value = ffmpeg.progressFromFile(Path(self._progress_dir.name) / "progress.txt", self.total_frames)
             return min(value or 0.0, 1.0)
@@ -174,12 +99,8 @@ class ConversionJob:
     @property
     def status(self) -> str:
         """Human readable current state"""
-        percent = f"{self.progress * 100:.0f}%"
-        if self.stage == OCIO:
-            return (f"OCIO {self.view}: {self.ocioFramesDone()}/{self.total_frames} frames "
-                    f"· {len(self.ocio_commands)} processes")
         if self.stage == ENCODE:
-            return f"Encoding {self.codec or 'video'}: {percent}"
+            return f"Encoding {self.codec or 'video'}: {self.progress * 100:.0f}%"
         if self.stage == DONE:
             return f"Done: {self.video.name}"
         if self.stage == CANCELLED:
@@ -195,12 +116,7 @@ class ConversionJob:
             return self._finish(FAILED, "ffmpeg not found")
         if not self.codecs:
             return self._finish(FAILED, "ffmpeg has none of the known encoders")
-        if self.ocio_commands:
-            self.temp_folder.mkdir(parents=True, exist_ok=True)
-            self.stage = OCIO
-            self._processes = process.Processes(self.ocio_commands, "DinoWrite: OCIO display transform")
-        else:
-            self._startEncode()
+        self._startEncode()
 
     def step(self) -> bool:
         """Advance the job; returns True when it's finished"""
@@ -211,23 +127,13 @@ class ConversionJob:
         result = self._processes.poll()
         if result is None:
             return False
-
-        if self.stage == OCIO:
-            if result:
-                self.color_transform = "none"  # PNGs are already display-encoded
-            else:
-                log.warning("OCIO transform failed, falling back to srgb transfer")
-                shutil.rmtree(self.temp_folder, ignore_errors=True)
-                self.color_transform = "srgb"
+        if result:
+            self._finish(DONE)
+        elif self.codecs:
+            log.warning("Encoder %s failed, trying %s", self.codec, self.codecs[0])
             self._startEncode()
-        elif self.stage == ENCODE:
-            if result:
-                self._finish(DONE)
-            elif self.codecs:
-                log.warning("Encoder %s failed, trying %s", self.codec, self.codecs[0])
-                self._startEncode()
-            else:
-                self._finish(FAILED, f"ffmpeg failed: {result.tail(3) or result.error}")
+        else:
+            self._finish(FAILED, f"ffmpeg failed: {result.tail(3) or result.error}")
         return self.finished
 
     def cancel(self):
@@ -256,34 +162,12 @@ class ConversionJob:
             self._progress_dir = tempfile.TemporaryDirectory(prefix="dinowrite_")
         progress_file = Path(self._progress_dir.name) / "progress.txt"
         progress_file.unlink(missing_ok=True)
-        source = self.temp_folder / (self.sequence.stem + ".png") if self.color_transform == "none" \
-            and self.ocio_commands else self.sequence
-        cmd = self.converter.encodeCommand(
-            self.codec, progress_file,
-            input=source.as_posix().replace(self.frame_padding, f"%0{self.padding}d"),
-            exr_transfer="" if self.color_transform == "none" else self.color_transform,
-            color_trc=self.colorTrc(),
-            comment=self.colorDescription(),
-            **self.encode_values)
+        cmd = self.converter.encodeCommand(self.codec, progress_file, **self.encode_values)
         label = f"DinoWrite: encoding video ({self.codec})" if self.codec else "DinoWrite: encoding video"
         self._processes = process.Processes([cmd], label)
 
-    def colorDescription(self) -> str:
-        """Written into the video metadata (VLC: Tools -> Media Information -> Comments)"""
-        if self.color_transform == "none" and self.ocio_commands:
-            return f"DinoWrite: OCIO {self.display} / {self.view}"
-        return f"DinoWrite: {self.color_transform} transfer"
-
-    def colorTrc(self) -> str:
-        """Transfer tag of the encoded video, matching how its pixels were encoded"""
-        if self.display and self.color_transform == "none" and self.ocio_commands:
-            return ocio.displayTransfer(self.display)
-        return {"bt709": "bt709", "gamma22": "gamma22"}.get(self.color_transform, "iec61966-2-1")
-
     def _finish(self, stage: str, error: str = ""):
         self.stage, self.error = stage, error
-        if self.temp_folder.exists():
-            shutil.rmtree(self.temp_folder, ignore_errors=True)
         if self._progress_dir is not None:
             self._progress_dir.cleanup()
             self._progress_dir = None

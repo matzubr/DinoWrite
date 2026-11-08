@@ -1,4 +1,4 @@
-"""Run external tools (ffmpeg, hoiiotool) without blocking Houdini.
+"""Run external tools (ffmpeg) without blocking Houdini.
 
 Processes runs a group of commands in parallel and is polled (no threads: hou isn't thread safe,
 the GUI polls from a QTimer). run() is the blocking variant with Houdini progress/cancel,

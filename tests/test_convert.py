@@ -1,8 +1,7 @@
-"""Conversion job: color transform selection, parallel OCIO, encoder fallback, cancel and cleanup"""
+"""Conversion job: sRGB for EXR, encoder fallback, cancel and cleanup"""
 import shutil
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -28,8 +27,7 @@ def sequence(tmp_path, hou, monkeypatch):
 
 
 class FakeProcesses:
-    """Instead of running tools: hoiiotool 'writes' PNGs for its frame range, ffmpeg 'writes' the video.
-    exit_code(cmd) decides success."""
+    """Instead of running ffmpeg: 'writes' the video. exit_code(cmd) decides success."""
     launched = []
     exit_code = staticmethod(lambda cmd: 0)
 
@@ -40,12 +38,7 @@ class FakeProcesses:
     def poll(self):
         codes = [FakeProcesses.exit_code(cmd) for cmd in self.cmds]
         for cmd, code in zip(self.cmds, codes):
-            if code == 0 and "--ociodisplay" in " ".join(cmd):
-                first, last = map(int, cmd[cmd.index("--frames") + 1].split("-"))
-                pattern = cmd[-1]
-                for frame in range(first, last + 1):
-                    open(pattern.replace("#", f"{frame:04d}"), "w").close()
-            elif code == 0:
+            if code == 0:
                 open(cmd[-1], "w").close()
         failed = [c for c in codes if c]
         return process.Result(returncode=failed[0] if failed else 0)
@@ -65,14 +58,11 @@ def tools(monkeypatch):
     monkeypatch.setattr(conversion.process, "Processes", FakeProcesses)
     monkeypatch.setattr(conversion.ffmpeg, "findFFmpeg", lambda custom="": "hffmpeg")
     monkeypatch.setattr(conversion.ffmpeg, "availableEncoders", lambda binary: {"h264_mf", "mpeg4"})
-    monkeypatch.setattr(conversion.ocio, "findOiiotool", lambda custom="": "hoiiotool")
-    monkeypatch.setattr(conversion.ocio, "displayView", lambda viewer, display="", view="", source="mplay": ("sRGB", "ACES SDR"))
-    monkeypatch.setattr(conversion.ocio, "configPath", lambda: "config.ocio")
     return FakeProcesses
 
 
 def _job(settings, sequence):
-    return conversion.ConversionJob(settings, None, sequence, "$F4", (1001, 1010), (1920, 1080), 1.0, "mov")
+    return conversion.ConversionJob(settings, sequence, "$F4", (1001, 1010), (1920, 1080), 1.0, "mov")
 
 
 def _run(job):
@@ -82,35 +72,22 @@ def _run(job):
     raise AssertionError("job didn't finish")
 
 
-def test_ocio_runs_in_parallel_parts_then_encodes_pngs(settings, sequence, tools):
-    settings["advanced"]["color_transform"] = "ocio"
-    settings["advanced"]["ocio_processes"] = 3
+def test_exr_is_encoded_with_srgb_curve(settings, sequence, tools):
     job = _run(_job(settings, sequence))
-
     assert job.succeeded and job.video == sequence.parent / "shot.v001.mov"
-    ocio_run, encode_run = tools.launched
-    ranges = [cmd[cmd.index("--frames") + 1] for cmd in ocio_run.cmds]
-    assert ranges == ["1001-1004", "1005-1007", "1008-1010"]
-    encode = encode_run.cmds[0]
-    assert encode[encode.index("-i") + 1].endswith("_ocio_tmp/shot.v001.%04d.png")
-    assert "lutrgb" not in " ".join(encode), "PNGs are display-encoded already"
-    assert "color_trc=iec61966-2-1" in " ".join(encode), "sRGB display -> sRGB transfer tag"
-    assert "comment=DinoWrite: OCIO sRGB / ACES SDR" in encode
-    assert not job.temp_folder.exists(), "temp PNGs removed"
-
-
-def test_ocio_failure_falls_back_to_srgb(settings, sequence, tools):
-    tools.exit_code = staticmethod(lambda cmd: 1 if cmd[0] == "hoiiotool" else 0)
-    job = _run(_job(settings, sequence))
     encode = tools.launched[-1].cmds[0]
-    assert job.succeeded
     assert encode[encode.index("-i") + 1].endswith("v001/shot.v001.%04d.exr")
-    assert "lutrgb" in " ".join(encode)
+    assert "lutrgb" in " ".join(encode) and "color_trc=iec61966-2-1" in " ".join(encode)
+
+
+def test_jpg_is_encoded_as_is(settings, sequence, tools):
+    job = _run(_job(settings, sequence.with_name("shot.v001.$F4.jpg")))
+    encode = tools.launched[-1].cmds[0]
+    assert job.succeeded and "lutrgb" not in " ".join(encode)
 
 
 def test_encoder_fallback_until_one_works(settings, sequence, tools):
     """hffmpeg: libx264 missing, h264_mf compiled in but fails on this machine -> mpeg4"""
-    settings["advanced"]["color_transform"] = "srgb"
     tools.exit_code = staticmethod(lambda cmd: 0 if _codec(cmd) == "mpeg4" else 1)
     job = _run(_job(settings, sequence))
     assert job.succeeded
@@ -118,7 +95,6 @@ def test_encoder_fallback_until_one_works(settings, sequence, tools):
 
 
 def test_all_encoders_fail(settings, sequence, tools):
-    settings["advanced"]["color_transform"] = "srgb"
     settings["advanced"]["conversion_delete_input_sequence"] = True
     tools.exit_code = staticmethod(lambda cmd: 1)
     job = _run(_job(settings, sequence))
@@ -128,31 +104,24 @@ def test_all_encoders_fail(settings, sequence, tools):
 
 
 def test_success_deletes_only_sequence_frames(settings, sequence, tools):
-    settings["advanced"]["color_transform"] = "srgb"
     settings["advanced"]["conversion_delete_input_sequence"] = True
     _run(_job(settings, sequence))
     assert sorted(f.name for f in sequence.parent.iterdir()) == ["notes.txt", "shot.v001.mov"]
 
 
-def test_cancel_during_ocio_keeps_sequence_and_skips_encode(settings, sequence, tools):
-    settings["advanced"]["color_transform"] = "ocio"
+def test_cancel_keeps_sequence(settings, sequence, tools):
     settings["advanced"]["conversion_delete_input_sequence"] = True
     job = _job(settings, sequence)
     job.start()
-    assert job.stage == conversion.OCIO
     job.cancel()
     assert job.stage == conversion.CANCELLED and job.finished
-    assert len(tools.launched) == 1, "no ffmpeg after cancel"
     assert len(list(sequence.parent.glob("*.exr"))) == 10
-    assert not job.temp_folder.exists()
 
 
 def test_status_and_progress(settings, sequence, tools):
-    settings["advanced"]["color_transform"] = "ocio"
     job = _job(settings, sequence)
+    assert job.status == "Starting..."
     job.start()
-    assert job.status.startswith("OCIO ACES SDR: 0/10 frames · ")  # process count depends on CPU cores
-    job.step()
     assert job.stage == conversion.ENCODE and job.status.startswith("Encoding h264_mf")
     job.step()
     assert job.status == "Done: shot.v001.mov" and job.progress == 1.0
@@ -166,9 +135,7 @@ def test_no_ffmpeg_fails_without_running_anything(settings, sequence, tools, mon
 
 
 def test_convert_blocking_returns_video_path(settings, sequence, tools):
-    settings["advanced"]["color_transform"] = "srgb"
-    viewer = SimpleNamespace(getPaneTab=lambda: None)
-    video = flipbook.convert(settings, viewer, sequence, "$F4", (1001, 1010), (1920, 1080), 1.0, "mov")
+    video = flipbook.convert(settings, sequence, "$F4", (1001, 1010), (1920, 1080), 1.0, "mov")
     assert video == sequence.parent / "shot.v001.mov"
 
 
@@ -196,9 +163,6 @@ def test_open_command_selects_sequence_folder():
 
 
 
-VIEWPORT = SimpleNamespace(getPaneTab=lambda: None)
-
-
 def _local_encoders():
     from DinoWrite.core import ffmpeg
     return ffmpeg.availableEncoders(shutil.which("ffmpeg") or "")
@@ -221,10 +185,9 @@ def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch, codec):
                         "format=rgb48le,lutrgb=r=0.18*maxval:g=0.18*maxval:b=0.18*maxval,format=gbrpf32le",
                         "-c:v", "exr", "-compression", "0", (folder / f"grey.v001.{frame}.exr").as_posix()],
                        check=True, stdin=subprocess.DEVNULL, timeout=60)
-    settings["advanced"]["color_transform"] = "srgb"
     settings["advanced"]["conversion_delete_input_sequence"] = False
     sequence = folder / "grey.v001.$F4.exr"
-    assert flipbook.convert(settings, VIEWPORT, sequence, "$F4", (1001, 1002), (64, 32), 1.0, "mov")
+    assert flipbook.convert(settings, sequence, "$F4", (1001, 1002), (64, 32), 1.0, "mov")
 
     pixel = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", (folder / "grey.v001.mov").as_posix(),
                             "-frames:v", "1", "-vf",
@@ -235,19 +198,5 @@ def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch, codec):
     tags = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags=comment", "-of", "default=nw=1",
                            (folder / "grey.v001.mov").as_posix()], capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, timeout=60).stdout
-    assert "DinoWrite: srgb transfer" in tags
+    assert "DinoWrite: sRGB" in tags
 
-
-def test_auto_color_is_srgb_for_viewport_and_ocio_for_beauty_pass(settings, tmp_path):
-    settings["advanced"]["color_transform"] = "auto"
-    sequence = tmp_path / "shot.v001.$F4.exr"
-    viewport_job = conversion.ConversionJob(settings, None, sequence, "$F4", (1, 2), (64, 64), 1.0, "mov")
-    assert viewport_job.color_transform == "srgb" and not viewport_job.ocio_commands
-    assert viewport_job.colorTrc() == "iec61966-2-1"
-    assert conversion.autoTransform(beauty_pass=True) == "ocio"
-
-
-def test_is_beauty_pass():
-    assert conversion.isBeautyPass(SimpleNamespace(beautyPassOnly=lambda: True))
-    assert not conversion.isBeautyPass(SimpleNamespace(beautyPassOnly=lambda: False))
-    assert not conversion.isBeautyPass(object())

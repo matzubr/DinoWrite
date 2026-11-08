@@ -38,12 +38,10 @@ def findFFmpeg(custom_path: str = "") -> str:
 
     return shutil.which("ffmpeg") or ""
 
-# Transfer functions to encode linear EXR for display, applied as a 16-bit LUT before RGB -> YUV.
-# Done with lutrgb filter instead of exr decoder "-apply_trc" option: that option was removed in newer ffmpeg.
+# Linear EXR -> sRGB curve, applied as a 16-bit LUT before RGB -> YUV (same as "EXR Transfer Func" of the
+# FFmpeg Encode Video TOP). Done with lutrgb filter: the exr decoder "-apply_trc" option was removed in newer ffmpeg.
 EXR_TRANSFER_EXPRESSIONS = {
-    "srgb":    "if(lte(val/maxval,0.0031308),12.92*val,maxval*(1.055*pow(val/maxval,1/2.4)-0.055))",
-    "gamma22": "maxval*pow(val/maxval,1/2.2)",
-    "bt709":   "if(lt(val/maxval,0.018),4.5*val,maxval*(1.099*pow(val/maxval,0.45)-0.099))",
+    "srgb": "if(lte(val/maxval,0.0031308),12.92*val,maxval*(1.055*pow(val/maxval,1/2.4)-0.055))",
 }
 
 def videoFilter(exr_transfer: str = "", color_trc: str = "iec61966-2-1") -> str:
