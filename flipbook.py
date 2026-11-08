@@ -2,16 +2,16 @@ from pathlib import Path
 from re import search
 
 import hou
-import json
 import webbrowser as wb
 
+from . import config
 from .core import ffmpeg, helpers
 from .core.log import hmsg, log
 from .core.viewport import HouViewport
 
 def start(data,kwargs):
 
-    settingsfile = load_json(Path(__file__).parent / "settings.json")
+    settingsfile = config.load()
     paths = settingsfile["paths"]
     advanced = settingsfile["advanced"]
     ffmpeg_cmd = settingsfile["ffmpeg_cmd"]
@@ -134,8 +134,7 @@ def start(data,kwargs):
         resolution = f"{file_resolution[0]}x{file_resolution[1]}"
         start_frame = int(frame_start)
 
-        converter = ffmpeg.FFmpeg(config_path=None,
-                            cmd=ffmpeg_cmd,
+        converter = ffmpeg.FFmpeg(cmd=ffmpeg_cmd,
                             binary=advanced.get("ffmpeg_path", ""))
 
         input_files = output_filepath.as_posix().replace(frame_padding, f"%{frame_padding_int}d")
@@ -150,10 +149,3 @@ def start(data,kwargs):
                                 output=output_video,
                                 delete_input=advanced['conversion_delete_input_sequence'],
                                 exr_transfer=advanced.get("exr_transfer", "srgb") if file_format == "exr" else "")
-
-def load_json(file):
-    try:
-        with open(file, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}

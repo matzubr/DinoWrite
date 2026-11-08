@@ -24,6 +24,7 @@ def houdini(hou, tmp_path, monkeypatch, qapp):
         return text
 
     main_window = QtWidgets.QWidget()
+    monkeypatch.setenv("DINOWRITE_SETTINGS", (tmp_path / "user_settings.json").as_posix())
     monkeypatch.setattr(hou, "text", type("text", (), {"expandString": staticmethod(expand)}), raising=False)
     monkeypatch.setattr(hou, "qt", type("qt", (), {"mainWindow": staticmethod(lambda: main_window)}), raising=False)
     yield main_window

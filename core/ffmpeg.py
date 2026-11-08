@@ -1,5 +1,4 @@
 """ffmpeg lookup, command building and video conversion"""
-import json
 import shutil
 import string
 import subprocess
@@ -68,15 +67,14 @@ def videoFilter(exr_transfer: str = "") -> str:
 class FFmpeg:
     """Wrapper around ffmpeg
     """
-    def __init__(self, config_path: str, cmd: list, binary: str = "") -> None:
+    def __init__(self, cmd: list, binary: str = "") -> None:
 
-        self.config_path = config_path
         self.cmdvar = cmd
         self.binary = findFFmpeg(binary)
         self.available = bool(self.binary)
 
-        if not config_path and not cmd:
-            log.warning("No config path or cmd set")
+        if not cmd:
+            log.warning("No ffmpeg_cmd set in settings")
 
         if self.available:
             log.info("Using ffmpeg: %s", self.binary)
@@ -96,11 +94,7 @@ class FFmpeg:
             log.error("No input or output set")
             return 0
 
-        if self.cmdvar:
-            template = self.cmdvar
-        else:
-            with open(self.config_path) as cmd:
-                template = json.load(cmd)['cmd']
+        template = self.cmdvar or []
 
         # Split template entries before formatting, so paths with spaces stay single arguments
         values = dict(fps=fps, resolution=resolution, aspect=aspect,

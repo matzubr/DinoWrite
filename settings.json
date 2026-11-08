@@ -2,7 +2,7 @@
     "paths":{
         "fb_folder":  "$HIP/../preview/{name}",
         "fb_name":    "{name}.{version}.$F4.{fileformat}",
-        "tmp_folder": "$TEMP/houdini_temp/flipbook_writer",
+        "tmp_folder": "$HOUDINI_TEMP_DIR/DinoWrite",
         "tmp_data":   "data.json",
         "fb_video_ext": "mov"
     },

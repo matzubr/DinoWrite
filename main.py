@@ -70,7 +70,7 @@ from re import search as regsearch
 import hou
 import json
 
-from . import flipbook
+from . import config, flipbook
 from .core import helpers
 from .core.log import hmsg, log
 from .core.viewport import HouViewport
@@ -206,7 +206,7 @@ class DinoWriter(QWidget):
         self.hou_viewport = HouViewport(kwargs)
         self.kwargs = kwargs
 
-        settingsfile = self.load_json(Path(__file__).parent / "settings.json")
+        settingsfile = config.load()
         self.paths = settingsfile["paths"]
         self.formats = settingsfile["formats"]
         self.addresolution = settingsfile["custom_resolution"]

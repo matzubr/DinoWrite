@@ -27,6 +27,12 @@ There are a bunch of little tips that I use in my daily workflow to make it easi
 2. Turning on the black background provides a little improvement when merging with the source.  
 3. Using version namespace in the file name allows you to see your flipbook version easily in Nuke without going inside the read node. Just select your read node and press the alt+up/down arrow to switch versions.
 
+### Settings
+---
+Defaults live in `settings.json` inside the tool folder. Your changes are saved separately to
+`$HOUDINI_USER_PREF_DIR/DinoWrite/settings.json` (or the path in `$DINOWRITE_SETTINGS`) and contain only the values
+that differ from defaults, so updating the tool doesn't wipe them.
+
 ### Attentions
 ---
 - By default, the script deletes your sequence if it doesn't cover the full length of the frame range (you can disable it in the `settings.json` file)  
