@@ -40,23 +40,18 @@ def findFFmpeg(custom_path: str = "") -> str:
 
 # Linear EXR -> sRGB curve, applied as a 16-bit LUT before RGB -> YUV (same as "EXR Transfer Func" of the
 # FFmpeg Encode Video TOP). Done with lutrgb filter: the exr decoder "-apply_trc" option was removed in newer ffmpeg.
-EXR_TRANSFER_EXPRESSIONS = {
-    "srgb": "if(lte(val/maxval,0.0031308),12.92*val,maxval*(1.055*pow(val/maxval,1/2.4)-0.055))",
-}
+SRGB_EXPRESSION = "if(lte(val/maxval,0.0031308),12.92*val,maxval*(1.055*pow(val/maxval,1/2.4)-0.055))"
 
-def videoFilter(exr_transfer: str = "", color_trc: str = "iec61966-2-1") -> str:
-    """ffmpeg -vf chain: optional linear -> display transfer, then BT.709 RGB -> YUV conversion.
+
+def videoFilter(srgb: bool = False, color_trc: str = "iec61966-2-1") -> str:
+    """ffmpeg -vf chain: optional linear -> sRGB curve, then BT.709 RGB -> YUV conversion.
 
     Without explicit out_color_matrix swscale converts with BT.601 matrix while the file is tagged BT.709,
     which shifts hues (reds/greens) in players.
     """
     filters = []
-    if exr_transfer:
-        expr = EXR_TRANSFER_EXPRESSIONS.get(exr_transfer)
-        if expr is None:
-            log.warning("Unknown exr_transfer '%s', expected one of: %s", exr_transfer, ", ".join(EXR_TRANSFER_EXPRESSIONS))
-        else:
-            filters += ["format=rgb48le", f"lutrgb=r='{expr}':g='{expr}':b='{expr}'"]
+    if srgb:
+        filters += ["format=rgb48le", f"lutrgb=r='{SRGB_EXPRESSION}':g='{SRGB_EXPRESSION}':b='{SRGB_EXPRESSION}'"]
     filters += ["scale=out_color_matrix=bt709:out_range=tv", "format=yuv420p",
                 # Tag frames explicitly: newer ffmpeg passes EXR "linear" trc through filters
                 # and it overrides -color_trc/-color_primaries output options
@@ -146,7 +141,7 @@ class FFmpeg:
             hmsg("No ffmpeg found (settings, $PDG_FFMPEG, $HFS/bin/hffmpeg, system PATH)\n"
                  "Video conversion skipped, sequence is kept")
 
-    def cmd(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", exr_transfer="",
+    def cmd(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", srgb=False,
             codec="libx264", color_trc="iec61966-2-1", comment="") -> list:
         """Build ffmpeg argv from template.
 
@@ -158,14 +153,14 @@ class FFmpeg:
 
         if input == "" or output == "":
             log.error("No input or output set")
-            return 0
+            return []
 
         template = self.cmdvar or []
 
         # Split template entries before formatting, so paths with spaces stay single arguments
         values = dict(fps=fps, resolution=resolution, aspect=aspect,
                     start_frame=start_frame, input=input, output=output, color_trc=color_trc, comment=comment,
-                    vf=videoFilter(exr_transfer, color_trc))
+                    vf=videoFilter(srgb, color_trc))
         commands = []
         for key in template:
             if key.strip() == CODEC_PLACEHOLDER:
@@ -179,7 +174,7 @@ class FFmpeg:
                 commands.append(token.format(**values))
 
         # "ffmpeg" in template means "the resolved executable"
-        if commands and commands[0] == "ffmpeg" and getattr(self, "binary", ""):
+        if commands and commands[0] == "ffmpeg" and self.binary:
             commands[0] = self.binary
 
         return commands

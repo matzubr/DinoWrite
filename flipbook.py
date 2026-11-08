@@ -121,13 +121,10 @@ def start(data,kwargs):
                                    resolution=file_resolution,
                                    pixel_aspect=float(data.get("aspect") or 1),
                                    video_ext=fb_video_ext)
-    if hou.isUIAvailable():
-        # Conversion runs in the background: Houdini stays usable, progress/cancel in a small window
-        from .gui.job_window import JobWindow
-        JobWindow(job, on_finished=lambda: finished(job.video if job.succeeded else None,
-                                                    cancelled=job.stage == conversion.CANCELLED))
-    else:
-        finished(job.runBlocking())
+    # Conversion runs in the background: Houdini stays usable, progress/cancel in a small window
+    from .gui.job_window import JobWindow
+    JobWindow(job, on_finished=lambda: finished(job.video if job.succeeded else None,
+                                                cancelled=job.stage == conversion.CANCELLED))
 
 
 def openResult(open_after: str, video, sequence_folder: Path, write_folder: Path):
@@ -246,9 +243,3 @@ def warmUp(recorder, flipbook_options):
     except Exception as e:  # warm-up is only an optimization, never block the real flipbook
         log.warning("Warm-up frame failed: %s", e)
 
-
-def convert(settings: dict, sequence: Path, frame_padding: str, frame_range: tuple,
-            resolution: tuple, pixel_aspect: float, video_ext: str):
-    """Convert blocking (no UI / scripts). Returns the written video path or None."""
-    return conversion.ConversionJob(settings, sequence, frame_padding, frame_range,
-                                    resolution, pixel_aspect, video_ext).runBlocking()

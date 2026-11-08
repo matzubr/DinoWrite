@@ -2,7 +2,7 @@
 
 Everything that needs hou (fps, ffmpeg lookup) is resolved in the constructor, on the main thread.
 Then the job only polls ffmpeg: the GUI calls step() from a QTimer, so Houdini stays usable while it
-encodes. Without UI, runBlocking() does the same in a loop. Encoders are tried one by one until one works.
+encodes. Encoders are tried one by one until one works.
 
 Color: a viewport flipbook stores the viewport image as you see it (display transform already applied),
 linearized with the inverse sRGB curve when written to EXR. MPlay shows it right after recording with
@@ -10,7 +10,6 @@ plain sRGB, so EXR is encoded back with the sRGB curve (like "EXR Transfer Func"
 Video TOP). JPG/PNG are already sRGB and are encoded as is.
 """
 import tempfile
-import time
 from pathlib import Path
 
 import hou
@@ -64,7 +63,7 @@ class ConversionJob:
             start_frame=self.frame_range[0],
             input=self.sequence.as_posix().replace(frame_padding, f"%0{self.padding}d"),
             output=self.video.as_posix(),
-            exr_transfer="srgb" if linear else "",
+            srgb=linear,
             color_trc=COLOR_TRC,
             comment="DinoWrite: sRGB, like MPlay after recording")
 
@@ -142,18 +141,6 @@ class ConversionJob:
         if self._process is not None:
             self._process.cancel()
         self._finish(CANCELLED)
-
-    def runBlocking(self):
-        """Run to the end with Houdini progress (for hython / no UI). Returns the video path or None."""
-        self.start()
-        try:
-            with hou.InterruptableOperation("DinoWrite: converting to video", open_interrupt_dialog=True) as op:
-                while not self.step():
-                    op.updateProgress(self.progress)
-                    time.sleep(process.POLL_SECONDS)
-        except hou.OperationInterrupted:
-            self.cancel()
-        return self.video if self.succeeded else None
 
     def _startEncode(self):
         self.stage = ENCODE

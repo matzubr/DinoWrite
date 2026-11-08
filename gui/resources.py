@@ -16,6 +16,8 @@ class StyleSheet:
     """
     def __init__(self, config_path: str) -> None:
         self.config_path = config_path
+        with open(config_path, encoding="utf-8") as theme:
+            self._data = json.load(theme)  # read once, get() is called for every widget
 
     def get(self, element: str) -> str:
         """Get element from stylesheet file
@@ -26,10 +28,7 @@ class StyleSheet:
         Returns:
             str: Stylesheet style string
         """
-        data = {}
-        with open(self.config_path) as theme:
-            data = json.load(theme)
-
+        data = self._data
         if element != "main":
             label_style = data[element]
             style = ""

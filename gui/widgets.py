@@ -81,20 +81,20 @@ class ColorfulLabel(Label):
         Label widget with colored strings
     """
     def __init__(self,
-                labels_list:list=["label1","#ff0033"," - ","#00ff3c","label2","#0073ff"],
+                labels_list:list=None,
                 font=MAIN_FONT,
                 size=MAIN_SIZE,
                 parent=None) -> QLabel:
         
         super().__init__(font=font,size=size,parent=parent)
-        self.update(labels_list)
+        self.update(labels_list or [])
 
     def update(self,labels_list):
         template_string = "<font color='{color}')>{label}</font>"
         
         if len(labels_list)%2!=0:
-            print("bad args")
-            return 0
+            log.warning("ColorfulLabel expects label, color pairs: %s", labels_list)
+            return
         
         string_to_set = ""
         labels = labels_list[0::2]
@@ -317,17 +317,6 @@ class HIcon(QLabel):
         iconpixmap = iconpixmap.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.setPixmap(iconpixmap)
         self.setFixedWidth(size)
-
-class HSeparator(QFrame):
-    """
-    Horizontal Separator (line)
-    """
-    def __init__(self,parent=None) -> QFrame:
-        super().__init__(parent)
-
-        self.setFrameShape(QFrame.HLine)
-        self.setFrameShadow(QFrame.Raised)
-        self.setLineWidth(1)
 
 class HLayout(QHBoxLayout):
     """

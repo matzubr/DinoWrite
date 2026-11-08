@@ -1,7 +1,6 @@
 """Run ffmpeg without blocking Houdini.
 
-Process is polled (no threads: hou isn't thread safe): the GUI polls it from a QTimer,
-ConversionJob.runBlocking() polls it in a loop when there's no UI (hython).
+Process is polled (no threads: hou isn't thread safe): the GUI polls it from a QTimer.
 """
 import subprocess
 import sys

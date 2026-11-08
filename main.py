@@ -3,15 +3,9 @@ DinoWrite main window
 Python Tool for Houdini to easily write flipbooks
 '''
 
-from . import __version__
-
 # CONSTANTs
 TITLE = "DinoWrite"
-BRANCH = "main"
-WINDOW_TITLE = f"{TITLE} - {__version__} - {BRANCH}"
-
-if BRANCH=="main":
-    WINDOW_TITLE = TITLE
+WINDOW_TITLE = TITLE
 
 WINDOW_WIDTH = 430
 WINDOW_HIGHT = 508
@@ -396,8 +390,7 @@ class DinoWriter(RoundedWindow, QWidget):
         return resolution[0] <= size.width() and resolution[1] <= size.height()
 
     def videoStatus(self) -> str:
-        if self.fileformat.currentText() != "exr":
-            return "as is"
+        # Convert to video always records EXR (see updateFileFormat)
         self.videoline.setExtraToolTip("EXR is encoded with the sRGB curve: the video looks like MPlay after recording")
         return "sRGB (like MPlay)"
 

@@ -136,7 +136,7 @@ Project layout:
 | `core/viewport.py` | Scene Viewer wrapper, torn off copy at true resolution |
 | `core/ffmpeg.py` | ffmpeg lookup, command and color filters |
 | `core/conversion.py` | conversion job: encode (encoder fallback) → cleanup, polled without blocking |
-| `core/process.py` | non-blocking process groups, blocking run with Houdini progress/cancel |
+| `core/process.py` | polled ffmpeg process (no threads: hou is not thread safe) |
 | `core/helpers.py`, `core/log.py` | versions, frame/name parsing, logging |
 | `gui/` | Qt: `qt.py` (PySide6/PySide2), theme, frameless windows, widgets, settings dialog, progress window |
 | `icons/`, `misc/` | icons and font |

@@ -1,6 +1,6 @@
 [project]
 name = "dinowrite"
-version = "1.3.0"
+version = "1.4.0"
 description = "Houdini tool to write flipbooks to disk"
 readme = "README.md"
 # Houdini 21 ships Python 3.11

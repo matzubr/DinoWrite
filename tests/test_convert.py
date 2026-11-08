@@ -1,6 +1,7 @@
 """Conversion job: sRGB for EXR, encoder fallback, cancel and cleanup"""
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -134,11 +135,6 @@ def test_no_ffmpeg_fails_without_running_anything(settings, sequence, tools, mon
     assert job.stage == conversion.FAILED and tools.launched == []
 
 
-def test_convert_blocking_returns_video_path(settings, sequence, tools):
-    video = flipbook.convert(settings, sequence, "$F4", (1001, 1010), (1920, 1080), 1.0, "mov")
-    assert video == sequence.parent / "shot.v001.mov"
-
-
 def test_open_result(monkeypatch, tmp_path):
     opened = []
     monkeypatch.setattr(flipbook, "openPath", lambda path, select=False: opened.append((path, select)))
@@ -187,7 +183,10 @@ def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch, codec):
                        check=True, stdin=subprocess.DEVNULL, timeout=60)
     settings["advanced"]["conversion_delete_input_sequence"] = False
     sequence = folder / "grey.v001.$F4.exr"
-    assert flipbook.convert(settings, sequence, "$F4", (1001, 1002), (64, 32), 1.0, "mov")
+    job = conversion.ConversionJob(settings, sequence, "$F4", (1001, 1002), (64, 32), 1.0, "mov")
+    while not job.step():
+        time.sleep(0.05)
+    assert job.succeeded, job.error
 
     pixel = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", (folder / "grey.v001.mov").as_posix(),
                             "-frames:v", "1", "-vf",
