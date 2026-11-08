@@ -385,7 +385,7 @@ class DinoWriter(RoundedWindow, QWidget):
             return ""
         if abs(resx / resy - camera_aspect) <= 0.01 * camera_aspect:
             return ""
-        return f"Record: {resx}×{resy} ≠ camera aspect {camera_aspect:.2f}, image will be stretched"
+        return f"Record: {resx}×{resy} ≠ camera aspect {camera_aspect:.2f}, stretched"
 
     def recordStatus(self) -> str:
         resx, resy = helpers.toInt(self.resx.text()), helpers.toInt(self.resy.text())
