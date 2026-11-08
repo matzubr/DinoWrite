@@ -167,7 +167,6 @@ class DinoWriter(QWidget):
         (Qt keeps it alive, so shelf script doesn't need to store a reference)
         '''
         super().__init__(hou.qt.mainWindow())
-        self.aborted = False
 
         '''
         Adding search path to Qt to be able to using "icons:filepath" prefix in stylesheets files
@@ -406,13 +405,6 @@ class DinoWriter(QWidget):
 
 
         '''
-        User refused to create flipbooks folder - don't show the window
-        '''
-        if self.aborted:
-            self.deleteLater()
-            return
-
-        '''
         Track if widget opened via search through childrens of Houdini Window
         Search by window title which we set in __init__
         '''
@@ -621,20 +613,35 @@ class DinoWriter(QWidget):
             ramtext = f"RAM Usage: {ram/BYTES_TOLERANCE :.2f} GB"
         self.ramusage.setText(ramtext)
 
+    def flipbooksRoot(self, name: str = "") -> Path:
+        """Folder that holds all flipbooks: parent of 'paths.fb_folder' for this name"""
+        fb_folder = hou.text.expandString(self.paths.get("fb_folder")).format(name=name or FILENAME_DEFAULT)
+        return Path(fb_folder).resolve().parent
+
     def flipbooks_menu(self):
-        fb_folder_raw = hou.text.expandString(self.paths.get("fb_folder")).format(name=self.data.get("name"))
-        pfolder = Path(fb_folder_raw).resolve().parent
+        """Existing flipbook names; empty while the flipbooks folder doesn't exist yet (asked on WRITE)"""
+        pfolder = self.flipbooksRoot(self.data.get("name"))
+        if not pfolder.is_dir():
+            return []
+        return [x.name for x in pfolder.iterdir() if x.is_dir()]
 
-        if not pfolder.exists():
-            if not hou.ui.displayMessage(f"{Path(self.paths.get('fb_folder')).parent}\nNo folder found\nWanna create it?",buttons=("Yes","No")):
-                pfolder.mkdir(parents=True, exist_ok=True)
-            else:
-                log.warning("No folder to write in flipbooks\nChange path or create folder")
-                self.aborted = True
-                return []
+    def confirmFlipbooksRoot(self) -> bool:
+        """Ask to create the flipbooks folder when writing for the first time.
 
-        folders = [x.name for x in pfolder.iterdir() if x.is_dir()]
-        return folders
+        No -> window stays open, so the path can be changed in settings.
+        """
+        pfolder = self.flipbooksRoot(self.filename.text())
+        if pfolder.is_dir():
+            return True
+        answer = hou.ui.displayMessage(
+            f"Flipbooks folder doesn't exist:\n{pfolder.as_posix()}\n\n"
+            "Create it? (you can change the path in Settings, gear button)",
+            buttons=("Create", "Cancel"), default_choice=0, close_choice=1, title="DinoWrite")
+        if answer != 0:
+            log.info("Flipbooks folder not created, nothing written")
+            return False
+        pfolder.mkdir(parents=True, exist_ok=True)
+        return True
 
     def get_tmp(self):
         hou_temp = Path(hou.text.expandString(self.paths.get("tmp_folder")))
@@ -662,6 +669,9 @@ class DinoWriter(QWidget):
         problem = helpers.nameProblem(self.filename.text())
         if problem:
             hmsg(problem)
+            return 0
+
+        if not self.confirmFlipbooksRoot():
             return 0
 
         data = self.saveState()
