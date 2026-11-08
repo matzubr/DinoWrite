@@ -366,6 +366,13 @@ class HouViewport:
     def _isLop(self) -> bool:
         return self.viewport_panetab.pwd().childTypeCategory().name() == "Lop"
 
+    def isLop(self) -> bool:
+        """Viewer shows a Solaris (LOP) stage"""
+        try:
+            return self._isLop()
+        except Exception:  # noqa: BLE001
+            return False
+
     def _renderSettingsPrim(self):
         """Render settings the viewer uses: the stage's renderSettingsPrimPath (set by Karma Render Settings),
         else one whose camera is the viewport camera, else the only one. None when it isn't clear."""

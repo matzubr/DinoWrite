@@ -179,6 +179,11 @@ def chooseRecorder(viewport, resolution: tuple, mode: str):
         mode = "auto"
     if mode == "off":
         return viewport
+    if getattr(viewport, "isLop", lambda: False)():
+        # Solaris keeps its lighting (Headlight Only...) in options Python can't read or copy:
+        # a cloned viewer starts with Normal Lighting. Record in the user's viewer instead.
+        log.info("Solaris viewer: recording in the maximized viewport (a viewer copy loses its lighting)")
+        return viewport
     if mode == "auto":
         viewport.maximize_viewport()
         if fitsResolution(viewport.settle(), resolution):

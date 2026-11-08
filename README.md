@@ -84,6 +84,8 @@ Last used window values are kept next to it in `last_used.json`.
 - `always`: always records in the copy
 - `off`: maximized viewport, Houdini scales the image to the resolution
 
+Solaris (LOP) viewers are always recorded in the maximized viewport: Solaris keeps its lighting (Headlight Only...) in options that can't be copied, a viewer copy would record with Normal Lighting.
+
 Some OSes (macOS, some Linux window managers) don't allow windows bigger than the screen: then a warning is logged and the image is scaled as before. On HiDPI screens a 4K viewport fits into a smaller window.
 
 ### Camera resolution
