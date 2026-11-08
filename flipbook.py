@@ -114,8 +114,7 @@ def start(data,kwargs):
                                    frame_range=(frame_start, frame_end),
                                    resolution=file_resolution,
                                    pixel_aspect=float(data.get("aspect") or 1),
-                                   video_ext=fb_video_ext,
-                                   display_referred=not flipbook_options.beautyPassOnly())
+                                   video_ext=fb_video_ext)
     if hou.isUIAvailable():
         # Conversion runs in the background: Houdini stays usable, progress/cancel in a small window
         from .gui.job_window import JobWindow
@@ -223,5 +222,5 @@ def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_
             resolution: tuple, pixel_aspect: float, video_ext: str):
     """Convert blocking (no UI / scripts). Returns the written video path or None."""
     job = conversion.ConversionJob(settings, viewport.getPaneTab(), sequence, frame_padding, frame_range,
-                                   resolution, pixel_aspect, video_ext, display_referred=viewport.isDisplayReferred())
+                                   resolution, pixel_aspect, video_ext)
     return job.runBlocking()

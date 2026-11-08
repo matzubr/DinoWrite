@@ -46,7 +46,7 @@
         "open_after": "video",
         "ffmpeg_path": "",
         "video_codec": "auto",
-        "color_transform": "auto",
+        "color_transform": "ocio",
         "ocio_source": "mplay",
         "ocio_display": "",
         "ocio_view": "",
