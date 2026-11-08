@@ -139,11 +139,11 @@ def test_solaris_never_tears_off():
     assert flipbook.chooseRecorder(viewer, (3840, 2160), "auto") is viewer
 
 
-def test_solaris_keeps_color_scheme():
+def test_solaris_keeps_viewport_options():
     viewer = FakeViewer((2560, 1400))
     viewer.isLop = lambda: True
-    flipbook.record(viewer, FakeOptions(), (1920, 1080), black_background=True)
-    assert not any(event[0] == "scheme" for event in viewer.events)
+    flipbook.record(viewer, FakeOptions(), (1920, 1080), black_background=True, hide_background_image=True)
+    assert not any(event[0] in ("scheme", "bgimage") for event in viewer.events)
     assert ("flipbook",) in viewer.events
 
 
