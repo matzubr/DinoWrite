@@ -15,7 +15,6 @@ if BRANCH=="main":
 
 WINDOW_WIDTH = 430
 WINDOW_HIGHT = 490
-WINDOW_RADIUS = 15
 WINDOW_OBJECT_NAME = "DinoWriterWindow"
 WIDTH_OFFSET = 20
 HIGHT_OFFSET = 90
@@ -51,17 +50,6 @@ FRAME_RANGES_DROPDOWN_DICT =  { "Global Frame Range":"$FSTART $FEND",
 FRAME_RANGES_COMPLETER_LIST = ['$F','$FSTART','$FEND','$RFSTART','$RFEND']
 RESOLUTION_DROPDOWN_LIST =    ["Camera Resolution","1/2","2/3","---"]
 
-COLORS_PALLETE = {
-    "white":"#dedede",
-    "grey-bright":"#373737",
-    "grey":"#2d2d2d",
-    "red":"#ec3c48",
-    "crimson":"#ff6570",
-    "orange":"#fa7960",
-    "yellow":"#f1d018",
-    "green":"#04e762",
-    "blue":"#00b6f8"
-}
 
 BYTES_TOLERANCE = 1024
 
@@ -77,89 +65,15 @@ from .core import helpers, ocio
 from .core.log import hmsg, log
 from .core.viewport import HouViewport
 from .gui import widgets
+from .gui.frameless import RoundedWindow, TitleBar
 from .gui.qt import *  # noqa: F403
+from .gui.theme import COLORS as COLORS_PALLETE
 from .gui.resources import ICONS_FOLDER, Icons as _Icons
 from .gui.settings_dialog import SettingsDialog, execDialog
 
 Icons = _Icons()
 
-class TitleBar(QWidget):
-    """
-    Custom titlebar with LOGO & TITLE & SETTINGS & CLOSE BUTTONS
-    """
-
-    def __init__(self, parent):
-        super().__init__()
-        self.parent = parent
-        self.initUI()
-
-    def initUI(self):
-        ### ICON
-        window_icon = widgets.HIcon(Icons.getRandom(type="Path"),size=40) 
-
-        ### TITLE
-        TITLE_SIZE=14
-        self.title = widgets.Label(WINDOW_TITLE,size=TITLE_SIZE)
-        self.title.setMaximumWidth(int(WINDOW_WIDTH/1.5))
-        self.title.setAlignment(Qt.AlignCenter)
-        self.title.setStyleSheet(f"background-color:{COLORS_PALLETE['grey']};\
-                            border-radius: 10px;\
-                            color:{COLORS_PALLETE['white']};")
-        self.title.setCursor(Qt.OpenHandCursor)
-
-        ### CLOSE BUTTON
-        CLOSE_BUTTON_SIZE = 20
-        close_button = widgets.PushButton()
-        close_button.setFixedSize(CLOSE_BUTTON_SIZE,CLOSE_BUTTON_SIZE)
-        close_button.setIcon(Icons.get("close.svg"))
-        close_button.setLayoutDirection(Qt.RightToLeft)
-        close_button.setStyleSheet(f"QPushButton {{background-color:{COLORS_PALLETE['crimson']};\
-                                                    border-radius: 10px;}}\
-                                    QPushButton::hover {{background-color:{COLORS_PALLETE['red']};}}")
-        close_button.clicked.connect(self.close_window)
-
-        ### SETTINGS BUTTON
-        settings_button = widgets.PushButton()
-        settings_button.setFixedSize(CLOSE_BUTTON_SIZE,CLOSE_BUTTON_SIZE)
-        settings_button.setIcon(Icons.get("gear.svg"))
-        settings_button.setIconSize(QSize(14,14))
-        settings_button.setToolTip("Settings")
-        settings_button.setCursor(Qt.PointingHandCursor)
-        settings_button.setStyleSheet(f"QPushButton {{background-color:{COLORS_PALLETE['grey']};\
-                                                    border-radius: 10px;}}\
-                                    QPushButton::hover {{background-color:{COLORS_PALLETE['orange']};}}")
-        settings_button.clicked.connect(self.parent.openSettings)
-
-        layout = widgets.HLayout([window_icon,self.title,settings_button,close_button],align=None)
-        layout.setContentsMargins(15,10,15,3)
-        self.setLayout(layout)
-
-        self.start = QPoint(0, 0)
-        self.pressing = False
-
-    def mousePressEvent(self, event):
-        self.start = self.mapToGlobal(event.pos())
-        self.pressing = True
-        self.title.setCursor(Qt.ClosedHandCursor)
-
-    def mouseMoveEvent(self, event):
-        if self.pressing:
-            self.end = self.mapToGlobal(event.pos())
-            self.movement = self.end-self.start
-            self.parent.setGeometry(self.mapToGlobal(self.movement).x(),
-                                self.mapToGlobal(self.movement).y(),
-                                self.parent.width(),
-                                self.parent.height())
-            self.start = self.end
-
-    def mouseReleaseEvent(self, QMouseEvent):
-        self.pressing = False
-        self.title.setCursor(Qt.OpenHandCursor)
-
-    def close_window(self):
-        self.parent.close()
-
-class DinoWriter(QWidget):
+class DinoWriter(RoundedWindow, QWidget):
 
     def __init__(self,kwargs):
         '''
@@ -186,15 +100,8 @@ class DinoWriter(QWidget):
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setFixedSize(WINDOW_WIDTH,WINDOW_HIGHT)
 
-        '''
-        Round edges: transparent window + antialiased rounded rect in paintEvent
-        (a setMask() region is 1-bit and gives jagged edges)
-        Children keep the old background color, the window itself paints nothing via stylesheet
-        '''
-        self.setObjectName(WINDOW_OBJECT_NAME)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setStyleSheet(f"background-color:{COLORS_PALLETE['grey-bright']};"
-                           f"QWidget#{WINDOW_OBJECT_NAME} {{background-color: transparent;}}")
+        # Round antialiased edges (see gui/frameless.py)
+        self.setupRoundedWindow(WINDOW_OBJECT_NAME)
 
 
         '''
@@ -369,7 +276,8 @@ class DinoWriter(QWidget):
         MAIN_LAYOUT.addWidget(checkbox_frame)
         MAIN_LAYOUT.addWidget(self.writebutton)
 
-        TITLE_LAYOUT.addWidget(TitleBar(self))
+        TITLE_LAYOUT.addWidget(TitleBar(self, WINDOW_TITLE, title_width=int(WINDOW_WIDTH/1.5),
+                                        on_settings=self.openSettings))
         TITLE_LAYOUT.addLayout(MAIN_LAYOUT)
 
         self.setLayout(TITLE_LAYOUT)
@@ -420,14 +328,6 @@ class DinoWriter(QWidget):
             self.deleteLater()
         else:
             self.show()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(COLORS_PALLETE["grey-bright"]))
-        painter.drawRoundedRect(QRectF(self.rect()), WINDOW_RADIUS, WINDOW_RADIUS)
-        painter.end()
 
     def eventFilter(self, source , event) -> bool:
         if  event.type() == QEvent.FocusIn or \
