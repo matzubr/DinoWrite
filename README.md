@@ -2,7 +2,10 @@
 
 Write flipbooks to disk easily. A pure Python tool for Houdini.
 
-![Alt text](https://i.imgur.com/fViOjuG.png "DinoWrite")
+<p align="center">
+  <img src="docs/dinowrite.png" width="49%" alt="DinoWrite window">
+  <img src="docs/dinowrite_animation.gif" width="49%" alt="Hover wave, zoom and WRITE press animation">
+</p>
 
 ## Features
 ---
@@ -56,6 +59,11 @@ Run the tool from a Scene Viewer's shelf/hotkey to record that viewer when there
 ---
 Click the gear button in the window title. Tabs:
 
+<p align="center">
+  <img src="docs/settings.png" width="49%" alt="Settings, General tab">
+  <img src="docs/settings_video.png" width="49%" alt="Settings, Video tab: found tools">
+</p>
+
 | tab | what |
 |---|---|
 | General | flipbooks folder, file name template, video extension, recording viewer, incomplete flipbook cleanup |
@@ -92,6 +100,12 @@ the viewport as seen.
   it's a preview, not a render. Skipped when the viewer doesn't use OCIO, the config isn't an ACES one,
   hoiiotool or PyOpenColorIO aren't found, or the sequence is deleted after the video. If it fails, the EXR stay as recorded.
 
+After recording, video and ACEScg conversion run in the background, Houdini stays usable:
+
+<p align="center">
+  <img src="docs/progress.png" width="45%" alt="Progress window: EXR to ACEScg">
+</p>
+
 ### Video codec
 `advanced.video_codec`: `auto` (default) or an encoder name. ffmpeg that ships with Houdini (`hffmpeg`) is built
 without GPL parts and has **no libx264**, so `auto` asks ffmpeg which encoders it has and tries
@@ -121,6 +135,7 @@ Local development uses [uv](https://docs.astral.sh/uv/). Houdini doesn't need it
 uv sync            # create .venv with dev tools (pytest, ruff, PySide6)
 uv run pytest      # run tests
 uv run ruff check  # lint
+uv run --with pillow python docs/make_images.py   # README images (docs/)
 ```
 
 Tests replace `hou` with a stub and build the real window offscreen with PySide6 (Qt6, as in Houdini 21).
@@ -148,6 +163,7 @@ Project layout:
 | `gui/` | Qt: `qt.py` (PySide6/PySide2), theme, frameless windows, widgets, animations, settings dialog, progress window |
 | `icons/`, `misc/` | icons and font |
 | `tests/` | pytest suite |
+| `docs/` | README images and `make_images.py` that renders them offscreen with the real widgets |
 
 ## Credits
 ---
