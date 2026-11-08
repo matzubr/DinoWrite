@@ -264,6 +264,19 @@ class DinoWriter(RoundedWindow, QWidget):
         self.offbackgroundimage.setToolTip("When you use a shot sequence on the background, sometimes \nyou have to turn it off to record pure 3d and put \nthe background on the composition\n\nThis checkbox disable the background for the time of recording the flipbook and then \nreturn it to its original state")
         self.openwritefolder.setToolTip("After finishing: opens the converted video in the default player,\nor the folder with the sequence (see Settings -> Video -> Open result)")
 
+        # Solaris: setting viewport options from Python resets the viewer lighting (Houdini bug), so these
+        # can't work there. Shown off and grey; the saved values are kept for OBJ/SOP viewers.
+        self.solaris_kept = {}
+        if getattr(self.hou_viewport, "isLop", lambda: False)():
+            for key, checkbox, icon in (("blackbg", self.blackbackground, blackbackground_icon),
+                                        ("bgimage", self.offbackgroundimage, offbackgroundimage_icon)):
+                self.solaris_kept[key] = checkbox.isChecked()
+                checkbox.setChecked(False)
+                for widget in (checkbox, icon):
+                    widget.setEnabled(False)
+                    widget.setToolTip("Not available in Solaris: changing viewport options from Python\n"
+                                      "resets the viewer lighting (Headlight Only -> Normal), a Houdini bug")
+
         convertvideo_layout =       widgets.HLayout([self.convertvideo,convertvideo_icon])
         blackbackground_layout =    widgets.HLayout([self.blackbackground,blackbackground_icon])
         offbackgroundimage_layout = widgets.HLayout([self.offbackgroundimage,offbackgroundimage_icon])
@@ -600,7 +613,8 @@ class DinoWriter(RoundedWindow, QWidget):
             "convertvideo": self.convertvideo.isChecked(),
             "blackbg": self.blackbackground.isChecked(),
             "bgimage": self.offbackgroundimage.isChecked(),
-            "openfolder": self.openwritefolder.isChecked()
+            "openfolder": self.openwritefolder.isChecked(),
+            **self.solaris_kept,  # Solaris: unchecked here, OBJ/SOP keep the user's choice
         }
 
     def saveState(self) -> dict:

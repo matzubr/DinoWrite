@@ -118,3 +118,17 @@ def test_long_video_status_does_not_widen_window(houdini, hou, monkeypatch):
     for label in (window.statusline, window.videoline):
         assert label.geometry().right() <= window.width()
     window.close()
+
+
+def test_solaris_greys_out_background_options(houdini, monkeypatch):
+    import DinoWrite
+    from DinoWrite.core import viewport
+
+    monkeypatch.setattr(viewport.HouViewport, "isLop", lambda self: True)
+    window = DinoWrite.show({})
+    for checkbox in (window.blackbackground, window.offbackgroundimage):
+        assert not checkbox.isEnabled()
+    data = window.collectData()
+    assert set(window.solaris_kept) == {"blackbg", "bgimage"}
+    assert data["blackbg"] == window.solaris_kept["blackbg"]  # the saved OBJ choice isn't overwritten
+    window.close()
