@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -39,13 +40,29 @@ class FakeProcesses:
     def poll(self):
         codes = [FakeProcesses.exit_code(cmd) for cmd in self.cmds]
         for cmd, code in zip(self.cmds, codes):
-            if code == 0:
+            if code == 0 and "--frames" in cmd:  # hoiiotool: one file per frame of its range
+                first, last = map(int, cmd[cmd.index("--frames") + 1].split("-"))
+                for frame in range(first, last + 1):
+                    Path(cmd[-1].replace("#", f"{frame:04d}")).write_text("acescg")
+            elif code == 0:
                 open(cmd[-1], "w").close()
         failed = [c for c in codes if c]
         return process.Result(returncode=failed[0] if failed else 0)
 
     def cancel(self):
         return process.Result(cancelled=True)
+
+
+@pytest.fixture
+def ocio_viewer(monkeypatch, hou):
+    """Viewer with ACES SDR on Rec.1886, ACES config, hoiiotool 2.5"""
+    from DinoWrite.core import acescg
+    monkeypatch.setattr(hou, "Color", SimpleNamespace(ocio_spaces=lambda: ("ACEScg", "Linear Rec.709 (sRGB)"),
+                                                      ocio_configPath=lambda: "config.ocio"), raising=False)
+    monkeypatch.setattr(acescg, "findOiiotool", lambda custom="": "hoiiotool")
+    monkeypatch.setattr(acescg, "oiiotoolVersion", lambda tool: (2, 5, 16, 0))
+    return SimpleNamespace(usingOCIO=lambda: True, getOCIODisplay=lambda: "Rec.1886 Rec.709 - Display",
+                           getOCIOView=lambda: "ACES 1.0 - SDR Video")
 
 
 def _codec(cmd):
@@ -199,3 +216,60 @@ def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch, codec):
                           stdin=subprocess.DEVNULL, timeout=60).stdout
     assert "DinoWrite: sRGB" in tags
 
+
+
+def _acescgJob(settings, sequence, viewer, convert_video):
+    return conversion.ConversionJob(settings, sequence, "$F4", (1001, 1010), (1920, 1080), 1.0, "mov",
+                                    convert_video=convert_video, scene_viewer=viewer)
+
+
+def test_exr_converted_to_acescg_in_place_without_video(settings, sequence, tools, ocio_viewer):
+    job = _run(_acescgJob(settings, sequence, ocio_viewer, convert_video=False))
+    assert job.succeeded and job.video is None and job.title == "shot.v001.####.exr"
+    cmd = tools.launched[0].cmds[0]
+    assert cmd[cmd.index("--colorconvert") + 1:cmd.index("--colorconvert") + 3] == ["lin_rec709_srgb", "srgb_tx"]
+    assert "--ociodisplay:from=lin_ap1:inverse=1" in cmd
+    assert (sequence.parent / "shot.v001.1005.exr").read_text() == "acescg", "originals replaced"
+    assert not job.temp_folder.exists()
+
+
+def test_video_from_recorded_exr_then_acescg(settings, sequence, tools, ocio_viewer):
+    settings["advanced"]["conversion_delete_input_sequence"] = False
+    job = _run(_acescgJob(settings, sequence, ocio_viewer, convert_video=True))
+    assert job.succeeded
+    encode, *convert = tools.launched
+    assert "lutrgb" in " ".join(encode.cmds[0]), "video is encoded from the recorded EXR"
+    assert convert and "hoiiotool" == convert[0].cmds[0][0]
+    assert job.video.exists()
+
+
+def test_no_acescg_when_sequence_is_deleted_after_video(settings, sequence, tools, ocio_viewer):
+    settings["advanced"]["conversion_delete_input_sequence"] = True
+    job = _run(_acescgJob(settings, sequence, ocio_viewer, convert_video=True))
+    assert job.succeeded and len(tools.launched) == 1 and not job.acescg_commands
+
+
+def test_acescg_failure_keeps_recorded_exr_and_video(settings, sequence, tools, ocio_viewer):
+    settings["advanced"]["conversion_delete_input_sequence"] = False
+    tools.exit_code = staticmethod(lambda cmd: 1 if cmd[0] == "hoiiotool" else 0)
+    job = _run(_acescgJob(settings, sequence, ocio_viewer, convert_video=True))
+    assert job.stage == conversion.FAILED and "kept as recorded" in job.error
+    assert (sequence.parent / "shot.v001.1005.exr").read_bytes() == b"exr"
+    assert job.video.exists() and not job.temp_folder.exists()
+
+
+def test_acescg_skipped_without_ocio_or_old_oiiotool(settings, sequence, tools, ocio_viewer, monkeypatch):
+    from DinoWrite.core import acescg
+    no_ocio = SimpleNamespace(usingOCIO=lambda: False)
+    assert not _acescgJob(settings, sequence, no_ocio, convert_video=False).hasWork
+    monkeypatch.setattr(acescg, "oiiotoolVersion", lambda tool: (2, 4, 17, 0))
+    assert not _acescgJob(settings, sequence, ocio_viewer, convert_video=False).hasWork
+    settings["advanced"]["exr_acescg"] = False
+    monkeypatch.setattr(acescg, "oiiotoolVersion", lambda tool: (2, 5, 16, 0))
+    assert not _acescgJob(settings, sequence, ocio_viewer, convert_video=False).hasWork
+
+
+def test_parse_oiiotool_version():
+    from DinoWrite.core import acescg
+    assert acescg.parseVersion("oiiotool OpenImageIO 2.5.16.0 http://www.openimageio.org") == (2, 5, 16, 0)
+    assert acescg.parseVersion("") == ()

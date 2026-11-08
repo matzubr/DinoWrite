@@ -32,7 +32,7 @@ class JobWindow(RoundedWindow, QWidget):
     """Polls job.step() from a QTimer; Cancel stops the external processes.
 
     Args:
-        job: ConversionJob-like object (start/step/cancel, progress, status, finished, succeeded, video)
+        job: ConversionJob-like object (start/step/cancel, progress, status, finished, succeeded, title)
         on_finished (callable, optional): called once when the job ends (any outcome)
     """
 
@@ -49,10 +49,10 @@ class JobWindow(RoundedWindow, QWidget):
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
         self.setupRoundedWindow(OBJECT_NAME)
-        self.setWindowTitle("DinoWrite - converting")
+        self.setWindowTitle("DinoWrite - after recording")
 
-        title = TitleBar(self, "Converting to video", icon_size=30, title_size=11, on_close=self.close)
-        self.name = widgets.Label(job.video.name, weight="bold")
+        title = TitleBar(self, "DinoWrite", icon_size=30, title_size=11, on_close=self.close)
+        self.name = widgets.Label(job.title, weight="bold")
         self.status = widgets.Label(job.status)
         self.bar = QProgressBar()
         self.bar.setRange(0, 1000)
@@ -113,7 +113,7 @@ class JobWindow(RoundedWindow, QWidget):
             severity = hou.severityType.Message
             if finished and not self.job.succeeded:
                 severity = hou.severityType.Warning
-            hou.ui.setStatusMessage(f"DinoWrite {self.job.video.name}: {self.job.status}", severity=severity)
+            hou.ui.setStatusMessage(f"DinoWrite {self.job.title}: {self.job.status}", severity=severity)
         except Exception:  # status bar is a nicety, never break the job over it
             pass
 

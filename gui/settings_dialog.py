@@ -3,7 +3,7 @@ import copy
 import re
 
 from .. import config
-from ..core import ffmpeg
+from ..core import acescg, ffmpeg
 from ..core.log import log
 from . import widgets
 from .frameless import RoundedWindow, TitleBar
@@ -125,6 +125,11 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.fb_video_ext = QComboBox()
         self.fb_video_ext.addItems(self.settings["formats"]["video_exts"])
         self.delete_incomplete = QCheckBox("Delete flipbook if it doesn't cover the frame range")
+        self.exr_acescg = QCheckBox("Convert EXR to ACEScg (opens right in Nuke with an ACES config)")
+        self.exr_acescg.setToolTip(
+            "After recording, the kept EXR are converted from the viewport look back to ACEScg\n"
+            "(inverse of the viewer's OCIO display/view, hoiiotool 2.5+). A viewer with the same\n"
+            "display/view shows exactly what the viewport showed. Off: EXR stay as recorded.")
         self.true_resolution = QComboBox()
         for key, label in TRUE_RESOLUTION:
             self.true_resolution.addItem(label, key)
@@ -138,6 +143,7 @@ class SettingsDialog(RoundedWindow, QDialog):
         form.addRow("Video extension", self.fb_video_ext)
         form.addRow("Record viewer", self.true_resolution)
         form.addRow("", self.delete_incomplete)
+        form.addRow("", self.exr_acescg)
         return self._page(form)
 
     def _videoTab(self) -> QWidget:
@@ -185,6 +191,7 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.fb_name.setText(paths.get("fb_name", ""))
         self.fb_video_ext.setCurrentText(paths.get("fb_video_ext", "mov"))
         self.delete_incomplete.setChecked(bool(advanced.get("delete_incomplete_fb")))
+        self.exr_acescg.setChecked(bool(advanced.get("exr_acescg", True)))
         self.true_resolution.setCurrentIndex(max(self.true_resolution.findData(advanced.get("true_resolution", "auto")), 0))
 
         self.delete_input.setChecked(bool(advanced.get("conversion_delete_input_sequence")))
@@ -216,6 +223,7 @@ class SettingsDialog(RoundedWindow, QDialog):
                 errors.append(f"{label}: unknown placeholder {e}, use {{name}}, {{version}}, {{fileformat}}")
 
         advanced["delete_incomplete_fb"] = self.delete_incomplete.isChecked()
+        advanced["exr_acescg"] = self.exr_acescg.isChecked()
         advanced["true_resolution"] = self.true_resolution.currentData()
         advanced["conversion_delete_input_sequence"] = self.delete_input.isChecked()
         advanced["open_after"] = self.open_after.currentData()
@@ -250,9 +258,13 @@ class SettingsDialog(RoundedWindow, QDialog):
         ffmpeg_found = ffmpeg.findFFmpeg(advanced.get("ffmpeg_path", ""))
         encoders = ffmpeg.codecCandidates(advanced.get("video_codec", "auto"),
                                           ffmpeg.availableEncoders(ffmpeg_found)) if ffmpeg_found else []
+        oiiotool = acescg.findOiiotool(advanced.get("oiiotool_path", ""))
+        version = ".".join(map(str, acescg.oiiotoolVersion(oiiotool))) if oiiotool else ""
+        oiiotool_text = f"{oiiotool} ({version or '?'})" if oiiotool else "NOT FOUND, EXR stay as recorded"
         self.tools_status.setText(
             f"ffmpeg: {ffmpeg_found or 'NOT FOUND, video conversion is skipped'}\n"
-            f"encoders (tried in order): {', '.join(encoders) or 'unknown'}")
+            f"encoders (tried in order): {', '.join(encoders) or 'unknown'}\n"
+            f"oiiotool: {oiiotool_text}")
         # the form layout sized this row before the text was set: reserve height for every line
         lines = self.tools_status.text().count("\n") + 1
         self.tools_status.setMinimumHeight(self.tools_status.fontMetrics().lineSpacing() * lines + 4)

@@ -11,6 +11,7 @@ class FakeJob:
     def __init__(self, steps=3):
         self.steps_left = steps
         self.video = Path("/tmp/shot.v001.mov")
+        self.title = self.video.name
         self.finished = self.succeeded = self.cancelled = False
         self.progress = 0.0
         self.error = ""

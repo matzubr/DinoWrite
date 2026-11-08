@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
 _loaded_at = time.time()
@@ -22,6 +22,7 @@ _SUBMODULES = (
     "core.log",
     "core.helpers",
     "core.process",
+    "core.acescg",
     "core.ffmpeg",
     "core.viewport",
     "core.conversion",

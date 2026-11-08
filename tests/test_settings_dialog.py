@@ -13,6 +13,9 @@ def dialog(houdini, monkeypatch):
 
     monkeypatch.setattr(ffmpeg, "findFFmpeg", lambda custom="": "/hfs/bin/hffmpeg")
     monkeypatch.setattr(ffmpeg, "availableEncoders", lambda binary: {"h264_mf", "mpeg4"})
+    from DinoWrite.core import acescg
+    monkeypatch.setattr(acescg, "findOiiotool", lambda custom="": "/hfs/bin/hoiiotool")
+    monkeypatch.setattr(acescg, "oiiotoolVersion", lambda tool: (2, 5, 16))
 
     dlg = SettingsDialog()
     yield dlg
@@ -28,7 +31,16 @@ def test_unchanged_dialog_collects_current_settings(dialog):
 
 
 def test_video_tab_shows_found_ffmpeg_and_encoders(dialog):
-    assert dialog.tools_status.text() == "ffmpeg: /hfs/bin/hffmpeg\nencoders (tried in order): h264_mf, mpeg4"
+    assert dialog.tools_status.text() == ("ffmpeg: /hfs/bin/hffmpeg\nencoders (tried in order): h264_mf, mpeg4\n"
+                                          "oiiotool: /hfs/bin/hoiiotool (2.5.16)")
+
+
+def test_acescg_option_is_saved(dialog, tmp_path):
+    assert dialog.exr_acescg.isChecked()
+    dialog.exr_acescg.setChecked(False)
+    dialog.save()
+    stored = json.loads((tmp_path / "user_settings.json").read_text())
+    assert stored == {"advanced": {"exr_acescg": False}}
 
 
 def test_validation_errors(dialog):

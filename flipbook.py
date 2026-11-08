@@ -111,7 +111,7 @@ def start(data,kwargs):
         if data.get("openfolder") and not cancelled:
             openResult(advanced.get("open_after", "video"), video, sequence_folder, write_folder)
 
-    if not (data.get("convertvideo") and files_keeped):
+    if not files_keeped:
         return finished(None)
 
     job = conversion.ConversionJob(settingsfile,
@@ -120,10 +120,14 @@ def start(data,kwargs):
                                    frame_range=(frame_start, frame_end),
                                    resolution=file_resolution,
                                    pixel_aspect=float(data.get("aspect") or 1),
-                                   video_ext=fb_video_ext)
-    # Conversion runs in the background: Houdini stays usable, progress/cancel in a small window
+                                   video_ext=fb_video_ext,
+                                   convert_video=bool(data.get("convertvideo")),
+                                   scene_viewer=viewport.getPaneTab())
+    if not job.hasWork:
+        return finished(None)
+    # Video / ACEScg run in the background: Houdini stays usable, progress/cancel in a small window
     from .gui.job_window import JobWindow
-    JobWindow(job, on_finished=lambda: finished(job.video if job.succeeded else None,
+    JobWindow(job, on_finished=lambda: finished(job.video if job.video and job.video.exists() else None,
                                                 cancelled=job.stage == conversion.CANCELLED))
 
 

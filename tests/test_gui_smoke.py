@@ -73,6 +73,9 @@ def test_status_line_shows_record_and_video(houdini, hou, monkeypatch):
     window.convertvideo.setChecked(False)
     window.updateStatus()
     assert window.statusline.text() == "Record: 640×480 in viewport"
+    assert window.videoline.text() == "Video: off · EXR: ACEScg"
+    window.settings["advanced"]["exr_acescg"] = False
+    window.updateStatus()
     assert window.videoline.text() == "Video: off"
     window.close()
 

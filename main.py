@@ -366,7 +366,12 @@ class DinoWriter(RoundedWindow, QWidget):
         self.statusline.setText(problem or self.recordStatus())
 
         self.videoline.setExtraToolTip("")
-        self.videoline.setText(f"Video: {self.videoStatus()}" if self.convertvideo.isChecked() else "Video: off")
+        parts = [f"Video: {self.videoStatus()}" if self.convertvideo.isChecked() else "Video: off"]
+        advanced = self.settings["advanced"]
+        keeps_exr = not (self.convertvideo.isChecked() and advanced.get("conversion_delete_input_sequence"))
+        if self.fileformat.currentText() == "exr" and advanced.get("exr_acescg", True) and keeps_exr:
+            parts.append("EXR: ACEScg")
+        self.videoline.setText(" · ".join(parts))
 
     def recordStatus(self) -> str:
         resx, resy = helpers.toInt(self.resx.text()), helpers.toInt(self.resy.text())

@@ -1,4 +1,4 @@
-"""Run ffmpeg without blocking Houdini.
+"""Run ffmpeg / hoiiotool without blocking Houdini.
 
 Process is polled (no threads: hou isn't thread safe): the GUI polls it from a QTimer.
 """

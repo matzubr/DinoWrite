@@ -9,7 +9,7 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
  - Folders are automatically versioned (`v001`, `v002`, ...)
  - True resolution: a 4K flipbook on a 2K monitor is recorded in a torn off copy of the viewer sized to 4K (bigger than the screen) instead of stretching the viewport
  - Convert the sequence to video in the background with ffmpeg that ships with Houdini: Houdini stays usable, a small window shows progress and can cancel
- - Video colors match MPlay right after recording
+ - Video colors match MPlay right after recording, EXR are converted to ACEScg for Nuke/comp
  - Status line shows how the flipbook will be recorded and encoded, flipbook name is checked while typing
  - Opens the result when done: the converted video or the folder
  - Settings dialog behind the gear button, your settings survive tool updates
@@ -77,15 +77,19 @@ Last used window values are kept next to it in `last_used.json`.
 
 Some OSes (macOS, some Linux window managers) don't allow windows bigger than the screen: then a warning is logged and the image is scaled as before. On HiDPI screens a 4K viewport fits into a smaller window.
 
-### Video colors
-The video looks like MPlay right after recording. A viewport flipbook stores the viewport image as you see it
-(display transform, e.g. ACES SDR, already applied), linearized with the inverse sRGB curve when written to EXR.
-DinoWrite encodes it back with the sRGB curve, like "EXR Transfer Func" of the FFmpeg Encode Video TOP. JPG/PNG are
-encoded as is. "Beauty pass only" is switched off while recording, so EXRs are always the viewport as seen.
+### Colors: video and EXR
+A viewport flipbook stores the viewport image as you see it (OCIO display/view, e.g. Rec.1886 / ACES SDR, already
+applied), linearized with the inverse sRGB curve. "Beauty pass only" is switched off while recording, so it's always
+the viewport as seen.
 
-Opening the EXR in MPlay later (File → Open) applies the OCIO view on top and looks darker than MPlay right after recording.
-
-The video is encoded with BT.709 matrix and tagged as BT.709 / sRGB.
+- **Video** is encoded from the recorded EXR with the sRGB curve (like "EXR Transfer Func" of the FFmpeg Encode Video
+  TOP): it looks like MPlay right after recording. JPG/PNG are encoded as is. Tagged BT.709 / sRGB.
+- **EXR → ACEScg** (`advanced.exr_acescg`, on by default, Settings → General): the kept EXR are converted back to
+  scene-linear ACEScg with the inverse of the viewer's display/view (`hoiiotool`, OpenImageIO 2.5+ that ships with
+  Houdini). In Nuke with an ACES config read them as ACEScg (the default for EXR) and view with the same display/view
+  as the Houdini viewer: the picture is the same as in the viewport. Highlights are limited to what was on screen,
+  it's a preview, not a render. Skipped when the viewer doesn't use OCIO, the config isn't an ACES one, hoiiotool is
+  older than 2.5, or the sequence is deleted after the video. If it fails, the EXR stay as recorded.
 
 ### Video codec
 `advanced.video_codec`: `auto` (default) or an encoder name. ffmpeg that ships with Houdini (`hffmpeg`) is built
@@ -95,6 +99,7 @@ moving to the next one if an encoder fails. The `{codec}` line in the ffmpeg com
 
 ### Tools lookup
 - ffmpeg: `advanced.ffmpeg_path` → `$PDG_FFMPEG` → `$HFS/bin/hffmpeg` (ships with Houdini) → system PATH
+- oiiotool: `advanced.oiiotool_path` → `$HFS/bin/hoiiotool` → `hoiiotool` / `oiiotool` in system PATH
 
 ### Attentions
 - After a successful conversion the image sequence is deleted (`conversion_delete_input_sequence`, on by default). Only frames of that sequence are removed, other files in the folder are kept. Cancelled or failed conversion always keeps the sequence
@@ -135,8 +140,9 @@ Project layout:
 | `core/` | Houdini logic without Qt |
 | `core/viewport.py` | Scene Viewer wrapper, torn off copy at true resolution |
 | `core/ffmpeg.py` | ffmpeg lookup, command and color filters |
-| `core/conversion.py` | conversion job: encode (encoder fallback) → cleanup, polled without blocking |
-| `core/process.py` | polled ffmpeg process (no threads: hou is not thread safe) |
+| `core/conversion.py` | after recording: video (encoder fallback) → EXR to ACEScg, polled without blocking |
+| `core/acescg.py` | EXR → ACEScg via hoiiotool (inverse of the viewer's OCIO display/view) |
+| `core/process.py` | polled external process (no threads: hou is not thread safe) |
 | `core/helpers.py`, `core/log.py` | versions, frame/name parsing, logging |
 | `gui/` | Qt: `qt.py` (PySide6/PySide2), theme, frameless windows, widgets, settings dialog, progress window |
 | `icons/`, `misc/` | icons and font |
