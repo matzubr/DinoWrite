@@ -98,22 +98,3 @@ def test_codec_placeholder_expands_to_encoder_args():
     converter.binary = ""
     assert converter.cmd(input="in.png", output="out.mov", codec="h264_mf", resolution="1920x1080", fps="24") == \
         ["ffmpeg", "-i", "in.png", "-c:v", "h264_mf", "-b:v", "12M", "out.mov"]
-
-
-def test_convert_falls_back_to_next_encoder(monkeypatch):
-    from DinoWrite.core import process
-
-    tried = []
-
-    def fake_run(cmd, label, progress=None):
-        codec = cmd[cmd.index("-c:v") + 1]
-        tried.append(codec)
-        return process.Result(returncode=0 if codec == "mpeg4" else 1)
-
-    monkeypatch.setattr(ffmpeg.process, "run", fake_run)
-    monkeypatch.setattr(ffmpeg, "availableEncoders", lambda binary: ffmpeg.parseEncoders(ENCODERS_OUTPUT))
-    converter = ffmpeg.FFmpeg.__new__(ffmpeg.FFmpeg)
-    converter.cmdvar = ["ffmpeg", "-i {input}", "{codec}", "{output}"]
-    converter.binary, converter.available, converter.codec = "hffmpeg", True, "auto"
-    assert converter.convert_to_video(input="in.png", output="out.mov")
-    assert tried == ["h264_mf", "h264_nvenc", "mpeg4"]

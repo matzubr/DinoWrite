@@ -1,4 +1,4 @@
-"""flipbook.convert(): color transform selection, fallbacks and cleanup"""
+"""Conversion job: color transform selection, parallel OCIO, encoder fallback, cancel and cleanup"""
 import shutil
 import subprocess
 from types import SimpleNamespace
@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from DinoWrite import config, flipbook
+from DinoWrite.core import conversion, process
 
 
 @pytest.fixture
@@ -19,80 +20,168 @@ def sequence(tmp_path, hou, monkeypatch):
     monkeypatch.setattr(hou, "fps", lambda: 24.0, raising=False)
     folder = tmp_path / "v001"
     folder.mkdir()
-    for frame in (1001, 1002, 1003):
+    for frame in range(1001, 1011):
         (folder / f"shot.v001.{frame}.exr").write_bytes(b"exr")
     (folder / "notes.txt").write_text("keep me")
     return folder / "shot.v001.$F4.exr"
 
 
-class FakeFFmpeg:
-    calls = []
+class FakeProcesses:
+    """Instead of running tools: hoiiotool 'writes' PNGs for its frame range, ffmpeg 'writes' the video.
+    exit_code(cmd) decides success."""
+    launched = []
+    exit_code = staticmethod(lambda cmd: 0)
 
-    def __init__(self, cmd, binary="", codec="auto"):
-        self.available = True
+    def __init__(self, cmds, label):
+        self.cmds, self.label = cmds, label
+        FakeProcesses.launched.append(self)
 
-    def convert_to_video(self, **kwargs):
-        FakeFFmpeg.calls.append(kwargs)
-        return True
+    def poll(self):
+        codes = [FakeProcesses.exit_code(cmd) for cmd in self.cmds]
+        for cmd, code in zip(self.cmds, codes):
+            if code == 0 and "--ociodisplay" in " ".join(cmd):
+                first, last = map(int, cmd[cmd.index("--frames") + 1].split("-"))
+                pattern = cmd[-1]
+                for frame in range(first, last + 1):
+                    open(pattern.replace("#", f"{frame:04d}"), "w").close()
+            elif code == 0:
+                open(cmd[-1], "w").close()
+        failed = [c for c in codes if c]
+        return process.Result(returncode=failed[0] if failed else 0)
+
+    def cancel(self):
+        return process.Result(cancelled=True)
+
+
+def _codec(cmd):
+    return cmd[cmd.index("-c:v") + 1] if "-c:v" in cmd else None
 
 
 @pytest.fixture
-def fake_ffmpeg(monkeypatch):
-    FakeFFmpeg.calls = []
-    monkeypatch.setattr(flipbook.ffmpeg, "FFmpeg", FakeFFmpeg)
-    return FakeFFmpeg
+def tools(monkeypatch):
+    FakeProcesses.launched = []
+    FakeProcesses.exit_code = staticmethod(lambda cmd: 0)
+    monkeypatch.setattr(conversion.process, "Processes", FakeProcesses)
+    monkeypatch.setattr(conversion.ffmpeg, "findFFmpeg", lambda custom="": "hffmpeg")
+    monkeypatch.setattr(conversion.ffmpeg, "availableEncoders", lambda binary: {"h264_mf", "mpeg4"})
+    monkeypatch.setattr(conversion.ocio, "findOiiotool", lambda custom="": "hoiiotool")
+    monkeypatch.setattr(conversion.ocio, "displayView", lambda viewer, display="", view="": ("sRGB", "ACES SDR"))
+    monkeypatch.setattr(conversion.ocio, "configPath", lambda: "config.ocio")
+    return FakeProcesses
+
+
+def _job(settings, sequence):
+    return conversion.ConversionJob(settings, None, sequence, "$F4", (1001, 1010), (1920, 1080), 1.0, "mov")
+
+
+def _run(job):
+    for _ in range(50):
+        if job.step():
+            return job
+    raise AssertionError("job didn't finish")
+
+
+def test_ocio_runs_in_parallel_parts_then_encodes_pngs(settings, sequence, tools):
+    settings["advanced"]["ocio_processes"] = 3
+    job = _run(_job(settings, sequence))
+
+    assert job.succeeded and job.video == sequence.parent / "shot.v001.mov"
+    ocio_run, encode_run = tools.launched
+    ranges = [cmd[cmd.index("--frames") + 1] for cmd in ocio_run.cmds]
+    assert ranges == ["1001-1004", "1005-1007", "1008-1010"]
+    encode = encode_run.cmds[0]
+    assert encode[encode.index("-i") + 1].endswith("_ocio_tmp/shot.v001.%04d.png")
+    assert "lutrgb" not in " ".join(encode), "PNGs are display-encoded already"
+    assert not job.temp_folder.exists(), "temp PNGs removed"
+
+
+def test_ocio_failure_falls_back_to_srgb(settings, sequence, tools):
+    tools.exit_code = staticmethod(lambda cmd: 1 if cmd[0] == "hoiiotool" else 0)
+    job = _run(_job(settings, sequence))
+    encode = tools.launched[-1].cmds[0]
+    assert job.succeeded
+    assert encode[encode.index("-i") + 1].endswith("v001/shot.v001.%04d.exr")
+    assert "lutrgb" in " ".join(encode)
+
+
+def test_encoder_fallback_until_one_works(settings, sequence, tools):
+    """hffmpeg: libx264 missing, h264_mf compiled in but fails on this machine -> mpeg4"""
+    settings["advanced"]["color_transform"] = "srgb"
+    tools.exit_code = staticmethod(lambda cmd: 0 if _codec(cmd) == "mpeg4" else 1)
+    job = _run(_job(settings, sequence))
+    assert job.succeeded
+    assert [_codec(run.cmds[0]) for run in tools.launched] == ["h264_mf", "mpeg4"]
+
+
+def test_all_encoders_fail(settings, sequence, tools):
+    settings["advanced"]["color_transform"] = "srgb"
+    settings["advanced"]["conversion_delete_input_sequence"] = True
+    tools.exit_code = staticmethod(lambda cmd: 1)
+    job = _run(_job(settings, sequence))
+    assert job.stage == conversion.FAILED
+    assert len(list(sequence.parent.glob("*.exr"))) == 10, "sequence is kept"
+    assert not job.video.exists()
+
+
+def test_success_deletes_only_sequence_frames(settings, sequence, tools):
+    settings["advanced"]["color_transform"] = "srgb"
+    settings["advanced"]["conversion_delete_input_sequence"] = True
+    _run(_job(settings, sequence))
+    assert sorted(f.name for f in sequence.parent.iterdir()) == ["notes.txt", "shot.v001.mov"]
+
+
+def test_cancel_during_ocio_keeps_sequence_and_skips_encode(settings, sequence, tools):
+    settings["advanced"]["conversion_delete_input_sequence"] = True
+    job = _job(settings, sequence)
+    job.start()
+    assert job.stage == conversion.OCIO
+    job.cancel()
+    assert job.stage == conversion.CANCELLED and job.finished
+    assert len(tools.launched) == 1, "no ffmpeg after cancel"
+    assert len(list(sequence.parent.glob("*.exr"))) == 10
+    assert not job.temp_folder.exists()
+
+
+def test_status_and_progress(settings, sequence, tools):
+    job = _job(settings, sequence)
+    job.start()
+    assert job.status.startswith("OCIO ACES SDR: 0%")
+    job.step()
+    assert job.stage == conversion.ENCODE and job.status.startswith("Encoding h264_mf")
+    job.step()
+    assert job.status == "Done: shot.v001.mov" and job.progress == 1.0
+
+
+def test_no_ffmpeg_fails_without_running_anything(settings, sequence, tools, monkeypatch):
+    monkeypatch.setattr(conversion.ffmpeg, "findFFmpeg", lambda custom="": "")
+    monkeypatch.setattr(conversion.ffmpeg, "hmsg", lambda *a, **k: None)
+    job = _run(_job(settings, sequence))
+    assert job.stage == conversion.FAILED and tools.launched == []
+
+
+def test_convert_blocking_returns_video_path(settings, sequence, tools):
+    settings["advanced"]["color_transform"] = "srgb"
+    viewer = SimpleNamespace(getPaneTab=lambda: None)
+    video = flipbook.convert(settings, viewer, sequence, "$F4", (1001, 1010), (1920, 1080), 1.0, "mov")
+    assert video == sequence.parent / "shot.v001.mov"
+
+
+def test_open_result(monkeypatch, tmp_path):
+    opened = []
+    monkeypatch.setattr(flipbook.wb, "open", opened.append)
+    video = tmp_path / "v001" / "shot.v001.mov"
+    video.parent.mkdir()
+    video.touch()
+
+    flipbook.openResult("video", video, video.parent, tmp_path)
+    flipbook.openResult("folder", video, video.parent, tmp_path)
+    flipbook.openResult("video", None, video.parent, tmp_path)
+    flipbook.openResult("video", None, tmp_path / "deleted", tmp_path)
+    assert opened == [video.as_uri(), video.parent.as_uri(), video.parent.as_uri(), tmp_path.as_uri()]
+
 
 
 VIEWPORT = SimpleNamespace(getPaneTab=lambda: None)
-
-
-def _convert(settings, sequence):
-    return flipbook.convert(settings, VIEWPORT, sequence, "$F4", (1001, 1003), (1920, 1080), 1.0, "mov")
-
-
-def test_ocio_success_encodes_display_pngs_without_extra_transfer(settings, sequence, fake_ffmpeg, monkeypatch):
-    seen = {}
-
-    def fake_transform(advanced, viewport, seq, display_sequence, *args):
-        seen["display_sequence"] = display_sequence
-        display_sequence.parent.mkdir(parents=True)
-        return True
-
-    monkeypatch.setattr(flipbook, "ocioTransform", fake_transform)
-    assert _convert(settings, sequence)
-
-    call = fake_ffmpeg.calls[0]
-    assert call["input"].endswith("_ocio_tmp/shot.v001.%04d.png")
-    assert call["exr_transfer"] == ""
-    assert call["output"].endswith("v001/shot.v001.mov")
-    assert not seen["display_sequence"].parent.exists(), "temp PNG folder must be removed"
-
-
-def test_ocio_failure_falls_back_to_srgb(settings, sequence, fake_ffmpeg, monkeypatch):
-    monkeypatch.setattr(flipbook, "ocioTransform", lambda *args: False)
-    assert _convert(settings, sequence)
-    call = fake_ffmpeg.calls[0]
-    assert call["input"].endswith("v001/shot.v001.%04d.exr")
-    assert call["exr_transfer"] == "srgb"
-
-
-def test_delete_input_removes_only_sequence_frames(settings, sequence, fake_ffmpeg):
-    settings["advanced"]["color_transform"] = "srgb"
-    settings["advanced"]["conversion_delete_input_sequence"] = True
-    assert _convert(settings, sequence)
-    assert sorted(f.name for f in sequence.parent.iterdir()) == ["notes.txt"]
-
-
-def test_failed_conversion_keeps_sequence(settings, sequence, monkeypatch):
-    class FailingFFmpeg(FakeFFmpeg):
-        def convert_to_video(self, **kwargs):
-            return False
-
-    monkeypatch.setattr(flipbook.ffmpeg, "FFmpeg", FailingFFmpeg)
-    settings["advanced"]["color_transform"] = "srgb"
-    settings["advanced"]["conversion_delete_input_sequence"] = True
-    assert not _convert(settings, sequence)
-    assert len(list(sequence.parent.glob("*.exr"))) == 3
 
 
 def _local_encoders():
@@ -128,34 +217,3 @@ def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch, codec):
                             "-f", "rawvideo", "-"], check=True, capture_output=True, stdin=subprocess.DEVNULL,
                            timeout=60).stdout
     assert all(abs(channel - 118) <= 2 for channel in pixel)
-
-
-def test_cancel_during_ocio_keeps_sequence_and_skips_encode(settings, sequence, fake_ffmpeg, monkeypatch):
-    from DinoWrite.core.process import Result
-
-    settings["advanced"]["conversion_delete_input_sequence"] = True
-    monkeypatch.setattr(flipbook, "ocioTransform", lambda *args: Result(cancelled=True))
-    assert not _convert(settings, sequence)
-    assert fake_ffmpeg.calls == []
-    assert len(list(sequence.parent.glob("*.exr"))) == 3
-    assert not (sequence.parent / "_ocio_tmp").exists()
-
-
-def test_open_result(monkeypatch, tmp_path):
-    opened = []
-    monkeypatch.setattr(flipbook.wb, "open", opened.append)
-    video = tmp_path / "v001" / "shot.v001.mov"
-    video.parent.mkdir()
-    video.touch()
-
-    flipbook.openResult("video", video, video.parent, tmp_path)
-    flipbook.openResult("folder", video, video.parent, tmp_path)
-    flipbook.openResult("video", None, video.parent, tmp_path)
-    flipbook.openResult("video", None, tmp_path / "deleted", tmp_path)
-    assert opened == [video.as_uri(), video.parent.as_uri(), video.parent.as_uri(), tmp_path.as_uri()]
-
-
-def test_convert_returns_video_path(settings, sequence, fake_ffmpeg):
-    settings["advanced"]["color_transform"] = "srgb"
-    video = _convert(settings, sequence)
-    assert video == sequence.parent / "shot.v001.mov"

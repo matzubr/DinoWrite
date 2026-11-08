@@ -2,7 +2,6 @@
 import shutil
 import string
 import subprocess
-import tempfile
 from os import environ as osenviron
 from pathlib import Path
 
@@ -190,46 +189,17 @@ class FFmpeg:
     def usesCodecPlaceholder(self) -> bool:
         return any(key.strip() == CODEC_PLACEHOLDER for key in (self.cmdvar or []))
 
-    def convert_to_video(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="",
-                         exr_transfer="", total_frames=0) -> process.Result:
-        """Encode image sequence to video with Houdini progress/cancel.
+    def codecs(self) -> list:
+        """Encoders to try in order; [None] when the encoder is written in the ffmpeg command itself"""
+        if not self.usesCodecPlaceholder():
+            return [None]
+        return codecCandidates(self.codec, availableEncoders(self.binary))
 
-        Tries encoders one by one (see CODECS) until one works: hardware encoders can be compiled in
-        but fail on a machine without that GPU.
-
-        Returns:
-            process.Result: truthy on success (caller decides about deleting inputs)
-        """
-        if not self.available:
-            log.warning("ffmpeg is not available, video conversion skipped")
-            return process.Result(error="ffmpeg not found")
-
-        if self.usesCodecPlaceholder():
-            candidates = codecCandidates(self.codec, availableEncoders(self.binary))
-        else:
-            candidates = [None]  # encoder is written in the ffmpeg command itself
-        if not candidates:
-            log.error("ffmpeg has none of the known encoders: %s", ", ".join(CODECS))
-            return process.Result(error="no encoder")
-
-        result = process.Result(error="not run")
-        for codec in candidates:
-            ffmpeg_cmd = self.cmd(fps=fps, resolution=resolution, aspect=aspect, exr_transfer=exr_transfer,
-                                  start_frame=start_frame, input=input, output=output, codec=codec)
-            with tempfile.TemporaryDirectory(prefix="dinowrite_") as temp:
-                progress_file = Path(temp) / "progress.txt"
-                # machine readable progress (frame=N lines) instead of the interactive stats line
-                ffmpeg_cmd[1:1] = ["-nostats", "-progress", progress_file.as_posix()]
-                label = f"DinoWrite: encoding video ({codec})" if codec else "DinoWrite: encoding video"
-                result = process.run(ffmpeg_cmd, label,
-                                     progress=lambda: progressFromFile(progress_file, total_frames))
-            if result or result.cancelled:
-                break
-            if codec:
-                log.warning("Encoder %s failed, trying the next one", codec)
-        if result:
-            log.info("Video written: %s", output)
-        return result
+    def encodeCommand(self, codec, progress_file: Path, **values) -> list:
+        """ffmpeg argv for one encoder, writing machine readable progress (frame=N) to progress_file"""
+        cmd = self.cmd(codec=codec, **values)
+        cmd[1:1] = ["-nostats", "-progress", Path(progress_file).as_posix()]
+        return cmd
 
 
 def progressFromFile(progress_file: Path, total_frames: int):

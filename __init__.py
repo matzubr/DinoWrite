@@ -20,6 +20,7 @@ _SUBMODULES = (
     "core.ffmpeg",
     "core.viewport",
     "core.ocio",
+    "core.conversion",
     "config",
     "gui.qt",
     "gui.resources",
@@ -27,6 +28,7 @@ _SUBMODULES = (
     "gui.widgets",
     "gui.frameless",
     "gui.settings_dialog",
+    "gui.job_window",
     "flipbook",
     "main",
 )

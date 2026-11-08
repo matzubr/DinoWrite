@@ -50,6 +50,7 @@
         "ocio_view": "",
         "ocio_input_space": "scene_linear",
         "oiiotool_path": "",
+        "ocio_processes": 0,
         "delete_incomplete_fb":false,
         "conversion_delete_input_sequence":true,
         "aspect_affects_resolution":false,

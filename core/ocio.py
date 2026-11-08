@@ -2,12 +2,12 @@
 
 Linear EXR flipbook -> OCIO display/view (same as the viewer shows) -> 16-bit PNG sequence -> ffmpeg.
 """
+import os
 import shutil
 from pathlib import Path
 
 import hou
 
-from . import process
 from .log import log
 
 # Color space of flipbook EXRs. scene_linear is an OCIO role, resolved by the active config
@@ -73,33 +73,58 @@ def displayView(scene_viewer=None, display: str = "", view: str = "") -> tuple:
 
 def displayCommand(tool: str, config: str, input_pattern: str, output_pattern: str,
                    frame_range: tuple, padding: int, display: str, view: str,
-                   input_space: str = DEFAULT_INPUT_SPACE) -> list:
-    """Build oiiotool argv for a whole sequence.
+                   input_space: str = DEFAULT_INPUT_SPACE, threads: int = 0) -> list:
+    """Build oiiotool argv for a frame range.
 
     Patterns use '#' as the frame number wildcard, padding is set by --framepadding:
-        hoiiotool --colorconfig cfg --frames 1001-1100 --framepadding 4 in.#.exr
+        hoiiotool --colorconfig cfg --frames 1001-1100 --framepadding 4 in.#.exr --ch R,G,B
                   --ociodisplay:from=scene_linear "sRGB - Display" "ACES 1.0 - SDR Video"
                   -d uint16 -o out.#.png
+    Alpha is dropped (--ch R,G,B): video has no alpha, a quarter less work and disk.
     """
     start, end = frame_range
     cmd = [tool]
+    if threads:
+        cmd += ["--threads", str(int(threads))]
     if config:
         cmd += ["--colorconfig", config]
-    cmd += ["--frames", f"{int(start)}-{int(end)}", "--framepadding", str(int(padding)), input_pattern]
+    cmd += ["--frames", f"{int(start)}-{int(end)}", "--framepadding", str(int(padding)), input_pattern,
+            "--ch", "R,G,B"]
     ociodisplay = f"--ociodisplay:from={input_space}" if input_space else "--ociodisplay"
     cmd += [ociodisplay, display, view, "-d", "uint16", "-o", output_pattern]
     return cmd
 
 
-def applyDisplayTransform(tool: str, config: str, input_pattern: str, output_pattern: str,
-                          frame_range: tuple, padding: int, display: str, view: str,
-                          input_space: str = DEFAULT_INPUT_SPACE) -> process.Result:
-    """Run oiiotool display transform with Houdini progress/cancel. Result is truthy on success."""
-    cmd = displayCommand(tool, config, input_pattern, output_pattern, frame_range, padding,
-                         display, view, input_space)
-    output_folder = Path(output_pattern).parent
-    output_folder.mkdir(parents=True, exist_ok=True)
-    total = int(frame_range[1]) - int(frame_range[0]) + 1
-    log.info("OCIO display transform '%s' / '%s'", display, view)
-    return process.run(cmd, "DinoWrite: OCIO display transform",
-                       progress=lambda: len(list(output_folder.iterdir())) / max(total, 1))
+def processCount(setting: int, frames: int) -> int:
+    """How many hoiiotool processes to run: setting, or half of the CPU cores (max 8) for 0/auto.
+
+    One process reads EXR / writes PNG frame by frame, so several processes on parts of the
+    range scale much better than one process with more threads.
+    """
+    count = int(setting or 0) or min(8, max(1, (os.cpu_count() or 2) // 2))
+    return max(1, min(count, frames))
+
+
+def splitFrames(start: int, end: int, parts: int) -> list:
+    """Split start..end (inclusive) into contiguous ranges of nearly equal size"""
+    frames = end - start + 1
+    parts = max(1, min(parts, frames))
+    size, extra = divmod(frames, parts)
+    ranges, first = [], start
+    for index in range(parts):
+        last = first + size - 1 + (1 if index < extra else 0)
+        ranges.append((first, last))
+        first = last + 1
+    return ranges
+
+
+def displayCommands(tool: str, config: str, input_pattern: str, output_pattern: str,
+                    frame_range: tuple, padding: int, display: str, view: str,
+                    input_space: str = DEFAULT_INPUT_SPACE, processes: int = 0) -> list:
+    """One oiiotool command per part of the frame range, to run in parallel"""
+    start, end = int(frame_range[0]), int(frame_range[1])
+    count = processCount(processes, end - start + 1)
+    threads = max(1, (os.cpu_count() or 2) // count)
+    return [displayCommand(tool, config, input_pattern, output_pattern, part, padding,
+                           display, view, input_space, threads=threads)
+            for part in splitFrames(start, end, count)]

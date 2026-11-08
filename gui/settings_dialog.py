@@ -112,6 +112,10 @@ class SettingsDialog(QDialog):
         self.ocio_input_space.setEditable(True)
         self.ocio_input_space.addItems(
             _ocioList(lambda: hou.Color.ocio_roles()) + _ocioList(lambda: hou.Color.ocio_spaces()))
+        self.ocio_processes = QSpinBox()
+        self.ocio_processes.setRange(0, 64)
+        self.ocio_processes.setSpecialValueText("auto (half of CPU cores, max 8)")
+        self.ocio_processes.setToolTip("hoiiotool processes running in parallel on parts of the frame range")
         self.ocio_display.currentTextChanged.connect(self._updateViews)
         self.color_transform.currentIndexChanged.connect(self._updateOcioEnabled)
 
@@ -138,6 +142,7 @@ class SettingsDialog(QDialog):
         form.addRow("OCIO display", self.ocio_display)
         form.addRow("OCIO view", self.ocio_view)
         form.addRow("EXR color space", self.ocio_input_space)
+        form.addRow("OCIO processes", self.ocio_processes)
         form.addRow("Video codec", self.video_codec)
         form.addRow("ffmpeg", ffmpeg_row)
         form.addRow("oiiotool", oiiotool_row)
@@ -213,6 +218,7 @@ class SettingsDialog(QDialog):
         self._updateViews()
         self.ocio_view.setCurrentText(advanced.get("ocio_view") or FROM_VIEWER)
         self.ocio_input_space.setCurrentText(advanced.get("ocio_input_space", ocio.DEFAULT_INPUT_SPACE))
+        self.ocio_processes.setValue(int(advanced.get("ocio_processes", 0) or 0))
         self.ffmpeg_path.setText(advanced.get("ffmpeg_path", ""))
         self.video_codec.setCurrentText(advanced.get("video_codec", "auto") or "auto")
         self.oiiotool_path.setText(advanced.get("oiiotool_path", ""))
@@ -248,6 +254,7 @@ class SettingsDialog(QDialog):
         advanced["ocio_display"] = self._ocioValue(self.ocio_display)
         advanced["ocio_view"] = self._ocioValue(self.ocio_view)
         advanced["ocio_input_space"] = self.ocio_input_space.currentText().strip()
+        advanced["ocio_processes"] = self.ocio_processes.value()
         advanced["ffmpeg_path"] = self.ffmpeg_path.text().strip()
         advanced["video_codec"] = self.video_codec.currentText().strip() or "auto"
         advanced["oiiotool_path"] = self.oiiotool_path.text().strip()
@@ -302,7 +309,8 @@ class SettingsDialog(QDialog):
 
     def _updateOcioEnabled(self):
         enabled = self.color_transform.currentData() == "ocio"
-        for widget in (self.ocio_display, self.ocio_view, self.ocio_input_space, self.oiiotool_path):
+        for widget in (self.ocio_display, self.ocio_view, self.ocio_input_space, self.ocio_processes,
+                       self.oiiotool_path):
             widget.setEnabled(enabled)
 
     def _updateToolsStatus(self):

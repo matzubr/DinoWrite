@@ -74,3 +74,26 @@ def test_ffmpeg_progress_from_file(tmp_path):
     progress.write_text("frame=10\nfps=24\nprogress=continue\nframe=25\nfps=")
     assert ffmpeg.progressFromFile(progress, 100) == 0.25
     assert ffmpeg.progressFromFile(progress, 0) is None
+
+
+def test_processes_parallel_success():
+    group = process.Processes([[sys.executable, "-c", "print('a')"], [sys.executable, "-c", "print('b')"]], "test")
+    while (result := group.poll()) is None:
+        time.sleep(0.01)
+    assert result and "a" in result.output and "b" in result.output
+
+
+def test_processes_one_failure_kills_the_rest():
+    group = process.Processes([[sys.executable, "-c", "import sys; sys.exit(2)"],
+                               [sys.executable, "-c", "import time; time.sleep(30)"]], "test")
+    started = time.monotonic()
+    while (result := group.poll()) is None:
+        time.sleep(0.01)
+    assert result.returncode == 2
+    assert time.monotonic() - started < 10
+
+
+def test_processes_cancel():
+    group = process.Processes([[sys.executable, "-c", "import time; time.sleep(30)"]], "test")
+    assert group.poll() is None
+    assert group.cancel().cancelled

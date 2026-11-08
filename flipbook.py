@@ -1,4 +1,3 @@
-import shutil
 from pathlib import Path
 from re import search
 
@@ -6,7 +5,7 @@ import hou
 import webbrowser as wb
 
 from . import config
-from .core import ffmpeg, helpers, ocio
+from .core import conversion, helpers
 from .core.log import hmsg, log
 from .core.viewport import TRUE_RESOLUTION_MODES, HouViewport, processEvents, fitsResolution
 
@@ -101,18 +100,26 @@ def start(data,kwargs):
             files_keeped=False
             log.warning(f"Incomplete flipbook deleted ({len(files)} of {fb_length} frames):\n{sequence_folder.as_posix()}")
 
-    video = None
-    if data.get("convertvideo") and files_keeped:
-        video = convert(settingsfile, viewport,
-                sequence=output_filepath,
-                frame_padding=frame_padding,
-                frame_range=(frame_start, frame_end),
-                resolution=file_resolution,
-                pixel_aspect=float(data.get("aspect") or 1),
-                video_ext=fb_video_ext)
+    def finished(video):
+        if data.get("openfolder"):
+            openResult(advanced.get("open_after", "video"), video, sequence_folder, write_folder)
 
-    if data.get("openfolder"):
-        openResult(advanced.get("open_after", "video"), video, sequence_folder, write_folder)
+    if not (data.get("convertvideo") and files_keeped):
+        return finished(None)
+
+    job = conversion.ConversionJob(settingsfile, viewport.getPaneTab(),
+                                   sequence=output_filepath,
+                                   frame_padding=frame_padding,
+                                   frame_range=(frame_start, frame_end),
+                                   resolution=file_resolution,
+                                   pixel_aspect=float(data.get("aspect") or 1),
+                                   video_ext=fb_video_ext)
+    if hou.isUIAvailable():
+        # Conversion runs in the background: Houdini stays usable, progress/cancel in a small window
+        from .gui.job_window import JobWindow
+        JobWindow(job, on_finished=lambda: finished(job.video if job.succeeded else None))
+    else:
+        finished(job.runBlocking())
 
 
 def openResult(open_after: str, video, sequence_folder: Path, write_folder: Path):
@@ -130,8 +137,6 @@ def openResult(open_after: str, video, sequence_folder: Path, write_folder: Path
     log.info("Opening: %s", target)
     wb.open(target.as_uri())
 
-
-COLOR_TRANSFORMS = ("ocio", "srgb", "gamma22", "bt709", "none")
 
 
 def chooseRecorder(viewport, resolution: tuple, mode: str):
@@ -195,100 +200,7 @@ def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
 
 def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_range: tuple,
             resolution: tuple, pixel_aspect: float, video_ext: str):
-    """Convert written flipbook sequence to video.
-
-    Color (advanced.color_transform):
-        ocio    - OCIO display/view of the viewer via hoiiotool (falls back to srgb if it isn't available/fails)
-        srgb, gamma22, bt709 - fixed transfer function for linear EXR
-        none    - pass pixel values as is (for display-encoded sequences)
-
-    Args:
-        sequence (Path): flipbook output path with frame token, like .../name.v001.$F4.exr
-        frame_padding (str): frame token in the file name, like "$F4"
-
-    Returns:
-        Path | None: written video, None when conversion failed or was cancelled
-    """
-    advanced = settings["advanced"]
-    padding = int(frame_padding.replace("$F", "") or 1)
-    is_exr = sequence.suffix.lower() == ".exr"
-    color_transform = advanced.get("color_transform", "ocio") if is_exr else "none"
-    if color_transform not in COLOR_TRANSFORMS:
-        log.warning("Unknown color_transform '%s', expected one of: %s. Using srgb",
-                    color_transform, ", ".join(COLOR_TRANSFORMS))
-        color_transform = "srgb"
-
-    converter = ffmpeg.FFmpeg(cmd=settings["ffmpeg_cmd"], binary=advanced.get("ffmpeg_path", ""),
-                              codec=advanced.get("video_codec", "auto"))
-    if not converter.available:
-        return None
-
-    ffmpeg_input = sequence
-    temp_folder = None
-    if color_transform == "ocio":
-        temp_folder = sequence.parent / "_ocio_tmp"
-        display_sequence = temp_folder / (sequence.stem + ".png")
-        result = ocioTransform(advanced, viewport, sequence, display_sequence, frame_padding, frame_range, padding)
-        if getattr(result, "cancelled", False):
-            shutil.rmtree(temp_folder, ignore_errors=True)
-            log.warning("Video conversion cancelled, image sequence is kept")
-            return None
-        if result:
-            ffmpeg_input = display_sequence
-            color_transform = "none"  # already display-encoded
-        else:
-            log.warning("OCIO transform unavailable, falling back to srgb transfer")
-            color_transform = "srgb"
-
-    # name.v001.$F4.exr -> name.v001.mov (works for name_$F4.exr too)
-    output_video = sequence.parent / (sequence.name.partition(frame_padding)[0].rstrip("._-") + f".{video_ext}")
-    result = converter.convert_to_video(
-        fps=helpers.ffmpegFps(hou.fps()),
-        resolution=f"{resolution[0]}x{resolution[1]}",
-        aspect=resolution[0] / resolution[1] * pixel_aspect,
-        start_frame=int(frame_range[0]),
-        input=ffmpeg_input.as_posix().replace(frame_padding, f"%0{padding}d"),
-        output=output_video.as_posix(),
-        exr_transfer="" if color_transform == "none" else color_transform,
-        total_frames=int(frame_range[1]) - int(frame_range[0]) + 1)
-
-    if temp_folder is not None and temp_folder.exists():
-        shutil.rmtree(temp_folder, ignore_errors=True)
-
-    if getattr(result, "cancelled", False):
-        log.warning("Video conversion cancelled, image sequence is kept")
-        Path(output_video).unlink(missing_ok=True)  # partial video
-    if result and advanced.get("conversion_delete_input_sequence"):
-        for frame in sequenceFiles(sequence, frame_padding):
-            frame.unlink()
-    return output_video if result else None
-
-
-def ocioTransform(advanced: dict, viewport, sequence: Path, display_sequence: Path,
-                  frame_padding: str, frame_range: tuple, padding: int):
-    """Returns process.Result of hoiiotool, or None when OCIO isn't available"""
-    tool = ocio.findOiiotool(advanced.get("oiiotool_path", ""))
-    if not tool:
-        log.warning("hoiiotool/oiiotool not found")
-        return None
-    display, view = ocio.displayView(viewport.getPaneTab(),
-                                     advanced.get("ocio_display", ""), advanced.get("ocio_view", ""))
-    if not display or not view:
-        log.warning("Can't resolve OCIO display/view")
-        return None
-    return ocio.applyDisplayTransform(
-        tool, ocio.configPath(),
-        input_pattern=sequence.as_posix().replace(frame_padding, "#"),
-        output_pattern=display_sequence.as_posix().replace(frame_padding, "#"),
-        frame_range=frame_range, padding=padding, display=display, view=view,
-        input_space=advanced.get("ocio_input_space", ocio.DEFAULT_INPUT_SPACE))
-
-
-def sequenceFiles(sequence: Path, frame_padding: str) -> list:
-    """Frames of this sequence only (not the video or other files in the folder)"""
-    prefix, _, suffix = sequence.name.partition(frame_padding)
-    if not sequence.parent.exists():
-        return []
-    return [f for f in sequence.parent.iterdir()
-            if f.is_file() and f.name.startswith(prefix) and f.name.endswith(suffix)
-            and f.name[len(prefix):len(f.name) - len(suffix)].isdigit()]
+    """Convert blocking (no UI / scripts). Returns the written video path or None."""
+    job = conversion.ConversionJob(settings, viewport.getPaneTab(), sequence, frame_padding, frame_range,
+                                   resolution, pixel_aspect, video_ext)
+    return job.runBlocking()
