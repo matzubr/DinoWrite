@@ -17,10 +17,10 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
  - Opens the result when done: the converted video or the folder
  - Settings dialog behind the gear button, your settings survive tool updates
  - Remembers last used values
- - Animations in the HotBox style: windows fade in/out; on hover a white wave spreads from the cursor and the button gets lighter and a bit bigger; WRITE grows and fades out with the window, then recording starts
+ - Animations in the HotBox style: windows fade in/out; on hover a white wave spreads from the cursor and the button gets lighter and a bit bigger
  - Supports multiple viewports
  - Shows existing flipbooks (can grab their name)
- - Grabs resolution from camera or divides it in half
+ - Grabs resolution from the camera (OBJ camera, or Solaris render settings / USD camera) or divides it; warns when the resolution would stretch the image
  - Works with Houdini 21+ (PySide6 / Qt6) and older Qt5 builds (PySide2)
 
 ## Installation
@@ -85,6 +85,22 @@ Last used window values are kept next to it in `last_used.json`.
 - `off`: maximized viewport, Houdini scales the image to the resolution
 
 Some OSes (macOS, some Linux window managers) don't allow windows bigger than the screen: then a warning is logged and the image is scaled as before. On HiDPI screens a 4K viewport fits into a smaller window.
+
+### Camera resolution
+"Camera Resolution" in the resolution menu:
+- OBJ / SOP: `resx` × `resy` of the camera the viewport looks through
+- Solaris (LOP): the render settings the stage uses (`renderSettingsPrimPath`, set by Karma Render Settings), else the
+  one whose camera is the viewport camera. Values are read at the current frame: in "Set Width, Compute Height from
+  Camera" mode Karma writes the resolution as time samples over a default 2048×1080. Without render settings:
+  the viewport width and the USD camera aspect (`horizontalAperture / verticalAperture`), as the viewer shows it
+- no camera: the viewport size
+
+Houdini stretches the camera image to the flipbook resolution, so a resolution with another aspect than the camera
+comes out squashed. The status line turns orange before recording:
+
+<p align="center">
+  <img src="docs/aspect_warning.png" width="60%" alt="Status line: resolution aspect differs from the camera">
+</p>
 
 ### Colors: video and EXR
 A viewport flipbook stores the viewport image as you see it (OCIO display/view, e.g. Rec.1886 / ACES SDR, already

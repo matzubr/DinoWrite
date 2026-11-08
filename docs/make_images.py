@@ -65,7 +65,7 @@ def fakeHoudini(temp: Path):
     from DinoWrite.core import acescg, ffmpeg, viewport
 
     viewer = types.SimpleNamespace(cameraName=lambda: "shotCam", cameraPixelAspect=lambda: 1.0,
-                                   cameraResolution=lambda: (3840, 2160),
+                                   cameraResolution=lambda: (3840, 2160), cameraAspect=lambda: 16 / 9,
                                    getPaneTab=lambda: types.SimpleNamespace(qtScreenGeometry=lambda: 1 / 0))
     viewport.HouViewport.__init__ = lambda self, kwargs: self.__dict__.update(viewer.__dict__)
     ffmpeg.findFFmpeg = lambda custom="": "$HFS/bin/hffmpeg"
@@ -112,7 +112,7 @@ def main():
         app.processEvents()
         onBackground(window).save((DOCS / "dinowrite.png").as_posix())
 
-        # Animation: hover a menu button, then WRITE, press it
+        # Animation: hover a menu button, then WRITE
         frames = []
 
         def record(count: int, wait: bool = True):
@@ -128,10 +128,17 @@ def main():
         window.res_menu.endHover()
         window.writebutton.startHover(QPointF(90, 20))
         record(18)
-        window.writebutton.playPress()
-        record(9)
-        record(6, wait=False)
+        window.writebutton.endHover()
+        record(8)
+        record(4, wait=False)
         saveGif(frames, DOCS / "dinowrite_animation.gif")
+
+        # Resolution with another aspect than the camera: orange warning in the status line
+        window.resy.setText("1600")
+        window.updateRamUsage()
+        window.updateStatus()
+        app.processEvents()
+        onBackground(window.statusline.parentWidget(), pad=8).save((DOCS / "aspect_warning.png").as_posix())
         window.close()
 
         dialog = SettingsDialog()
