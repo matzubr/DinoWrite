@@ -33,6 +33,9 @@ There are a bunch of little tips that I use in my daily workflow to make it easi
 - By default, after converting sequence to video, script delete sequence files (which can also be disabled in `settings.json`)  
 - By default, sequences are written in native pixel aspect, but Houdini flipbooks cannot handle that with the original resolution. It can be fixed in Nuke via the reformat node. But ffmpeg conversion handles pixel aspect and gives you the correct image (which can also be modified in `settings.json`)
 
+- Video conversion treats EXR flipbooks as linear and encodes them to sRGB (`advanced.exr_transfer` in `settings.json`: `srgb`, `gamma22`, `bt709`, or `""` to skip). If the video looks washed out compared to the viewport, your EXRs are already display-encoded: set it to `""`
+- ffmpeg is taken from `advanced.ffmpeg_path`, then `$PDG_FFMPEG`, then the one that ships with Houdini (`$HFS/bin/hffmpeg`), then system PATH
+
 ## Installation 
 ---
 1. Download source files 

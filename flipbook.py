@@ -148,7 +148,8 @@ def start(data,kwargs):
                                 start_frame=start_frame,
                                 input=input_files,
                                 output=output_video,
-                                delete_input=advanced['conversion_delete_input_sequence'])
+                                delete_input=advanced['conversion_delete_input_sequence'],
+                                exr_transfer=advanced.get("exr_transfer", "srgb") if file_format == "exr" else "")
 
 def load_json(file):
     try:

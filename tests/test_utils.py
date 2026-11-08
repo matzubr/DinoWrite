@@ -83,3 +83,26 @@ def test_ffmpeg_cmd_uses_resolved_binary(utils):
     ffmpeg.cmdvar = ["ffmpeg", "-i {input}", "{output}"]
     ffmpeg.binary = "/opt/hfs/bin/hffmpeg"
     assert ffmpeg.cmd(input="in.exr", output="out.mov")[0] == "/opt/hfs/bin/hffmpeg"
+
+
+def test_video_filter(utils):
+    assert utils.videoFilter("").startswith("scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=")
+    vf = utils.videoFilter("srgb")
+    assert vf.startswith("format=rgb48le,lutrgb=r='")
+    assert "lutrgb" in vf and vf.endswith(utils.videoFilter(""))
+    assert utils.videoFilter("unknown") == utils.videoFilter("")
+
+
+def test_ffmpeg_cmd_puts_filter_as_single_argument(utils):
+    ffmpeg = utils.FFmpeg.__new__(utils.FFmpeg)
+    ffmpeg.cmdvar = ["ffmpeg", "-i {input}", "-vf {vf}", "{output}"]
+    ffmpeg.binary = ""
+    cmd = ffmpeg.cmd(input="in.exr", output="out.mov", exr_transfer="srgb")
+    assert cmd[3:5] == ["-vf", utils.videoFilter("srgb")]
+
+
+def test_ffmpeg_cmd_skips_entry_with_empty_placeholder(utils):
+    ffmpeg = utils.FFmpeg.__new__(utils.FFmpeg)
+    ffmpeg.cmdvar = ["ffmpeg", "-start_number {start_frame}", "-i {input}", "{output}"]
+    ffmpeg.binary = ""
+    assert ffmpeg.cmd(start_frame="", input="in.png", output="out.mov") == ["ffmpeg", "-i", "in.png", "out.mov"]
