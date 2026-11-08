@@ -260,7 +260,8 @@ class SettingsDialog(RoundedWindow, QDialog):
                                           ffmpeg.availableEncoders(ffmpeg_found)) if ffmpeg_found else []
         oiiotool = acescg.findOiiotool(advanced.get("oiiotool_path", ""))
         version = ".".join(map(str, acescg.oiiotoolVersion(oiiotool))) if oiiotool else ""
-        oiiotool_text = f"{oiiotool} ({version or '?'})" if oiiotool else "NOT FOUND, EXR stay as recorded"
+        oiiotool_text = (oiiotool + (f" ({version})" if version else "")) if oiiotool else \
+            "NOT FOUND, EXR stay as recorded"
         try:
             import PyOpenColorIO
 
