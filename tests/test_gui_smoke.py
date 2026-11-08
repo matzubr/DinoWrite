@@ -38,3 +38,42 @@ def test_legacy_shelf_import_still_works(houdini):
     window = ui.DinoWriter({})
     assert window.isVisible()
     window.close()
+
+
+def test_invalid_name_blocks_write(houdini):
+    import DinoWrite
+
+    window = DinoWrite.show({})
+    window.filename.setText("my shot")
+    assert not window.writebutton.isEnabled()
+    assert "space" in window.statusline.text()
+    window.filename.setText("my_shot")
+    assert window.writebutton.isEnabled()
+    window.close()
+
+
+def test_status_line_shows_record_and_video(houdini, hou, monkeypatch):
+    from types import SimpleNamespace
+
+    import DinoWrite
+
+    monkeypatch.setattr(hou, "Color", SimpleNamespace(ocio_defaultDisplay=lambda: "sRGB - Display",
+                                                      ocio_defaultView=lambda: "Un-tone-mapped"), raising=False)
+    window = DinoWrite.show({})
+    monkeypatch.setattr(window.hou_viewport, "getPaneTab",
+                        lambda: SimpleNamespace(usingOCIO=lambda: False, qtScreenGeometry=lambda: 1 / 0))
+    window.resx.setText("20000")
+    window.resy.setText("10000")
+    window.convertvideo.setChecked(True)
+    window.updateStatus()
+    text = window.statusline.text()
+    assert "20000&times;10000 in separate viewer" in text
+    assert "Video: OCIO Un-tone-mapped" in text
+    assert "sRGB - Display" in window.statusline.toolTip()
+
+    window.resx.setText("640")
+    window.resy.setText("480")
+    window.convertvideo.setChecked(False)
+    window.updateStatus()
+    assert window.statusline.text() == "Record: 640&times;480 in viewport"
+    window.close()

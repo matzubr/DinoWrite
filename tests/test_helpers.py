@@ -43,3 +43,10 @@ def test_to_int():
     assert helpers.toInt("12") == 12
     assert helpers.toInt("") is None
     assert helpers.toInt("-", 5) == 5
+
+
+def test_name_problem():
+    assert helpers.nameProblem("shot_010-fx.v2") == ""
+    assert helpers.nameProblem("  ") == "Name is empty"
+    assert helpers.nameProblem("my shot/fx") == "Not allowed in name: space /"
+    assert "dot" in helpers.nameProblem(".hidden")

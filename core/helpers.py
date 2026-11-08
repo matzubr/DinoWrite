@@ -7,6 +7,23 @@ import hou
 VERSION_FOLDER_PATTERN = re.compile(r"^v(\d+)$")
 VERSION_MIN_PADDING = 3
 
+# Flipbook name becomes a folder and a file name: keep it portable
+NAME_ALLOWED = re.compile(r"[A-Za-z0-9_\-.]")
+
+
+def nameProblem(name: str) -> str:
+    """Why the flipbook name can't be used, empty string if it's fine"""
+    if not name.strip():
+        return "Name is empty"
+    bad = sorted({c for c in name if not NAME_ALLOWED.fullmatch(c)})
+    if bad:
+        shown = " ".join("space" if c == " " else c for c in bad)
+        return f"Not allowed in name: {shown}"
+    if name.startswith(".") or name.endswith("."):
+        return "Name can't start or end with a dot"
+    return ""
+
+
 def nextVersion(folder: Path) -> str:
     """Get next version string (like 'v004') based on 'vNNN' subfolders in folder.
 

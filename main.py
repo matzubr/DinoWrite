@@ -14,7 +14,7 @@ if BRANCH=="main":
     WINDOW_TITLE = TITLE
 
 WINDOW_WIDTH = 430
-WINDOW_HIGHT = 470
+WINDOW_HIGHT = 490
 WIDTH_OFFSET = 20
 HIGHT_OFFSET = 90
 
@@ -71,7 +71,7 @@ import hou
 import json
 
 from . import config, flipbook
-from .core import helpers
+from .core import helpers, ocio
 from .core.log import hmsg, log
 from .core.viewport import HouViewport
 from .gui import widgets
@@ -220,6 +220,7 @@ class DinoWriter(QWidget):
         self.kwargs = kwargs
 
         settingsfile = config.load()
+        self.settings = settingsfile
         self.paths = settingsfile["paths"]
         self.formats = settingsfile["formats"]
         self.addresolution = settingsfile["custom_resolution"]
@@ -238,6 +239,8 @@ class DinoWriter(QWidget):
 
         self.cameraname = widgets.Label("Camera: {camera}".format(camera=self.hou_viewport.cameraName()))
         self.ramusage =   widgets.Label("RAM Usage: {ramusage}")
+        self.statusline = widgets.Label("")
+        self.statusline.setTextFormat(Qt.RichText)
         self.seqname = widgets.ColorfulLabel()
         dino_paint = widgets.HIcon(Icons.get("label_dino_paint.svg",type="Path"),size=50)
         
@@ -252,6 +255,7 @@ class DinoWriter(QWidget):
 
         info_layout.addWidget(self.cameraname)
         info_layout.addWidget(self.ramusage)
+        info_layout.addWidget(self.statusline)
         info_layout.addLayout(sequence_layout)
 
         ## MAIN SETTINGS
@@ -387,12 +391,19 @@ class DinoWriter(QWidget):
         self.frame_menu.menu.triggered.connect(self.updateRamUsage)
         self.convertvideo.stateChanged.connect(self.updateFileFormat)
         self.writebutton.clicked.connect(self.main)
+        self.filename.textChanged.connect(self.updateStatus)
+        for line in (self.resx, self.resy):
+            line.editingFinished.connect(self.updateStatus)
+        self.res_menu.menu.triggered.connect(self.updateStatus)
+        self.convertvideo.stateChanged.connect(self.updateStatus)
+        self.fileformat.currentIndexChanged.connect(self.updateStatus)
 
         # SCRIPTS
         self.updateRamUsage()
         self.updateColorfulLabel()
         self.updateFileFormat()
         self.updateResolutions()
+        self.updateStatus()
 
 
         '''
@@ -443,6 +454,62 @@ class DinoWriter(QWidget):
             value = helpers.toInt(line.text())
             if value is not None:
                 line.setText(str(max(value, minimum)))
+
+    def updateStatus(self):
+        """Status line: name problems (red), how the flipbook will be recorded and encoded"""
+        problem = helpers.nameProblem(self.filename.text())
+        self.filename.setStyleSheet(widgets.styles.get("lineedit") +
+                                    (f"QLineEdit {{border: 1px solid {COLORS_PALLETE['red']};}}" if problem else ""))
+        self.writebutton.setEnabled(not problem)
+        self.writebutton.setToolTip(problem)
+        if problem:
+            self.statusline.setText(f"<font color='{COLORS_PALLETE['crimson']}'>{problem}</font>")
+            return
+
+        self.statusline.setToolTip("")
+        parts = [self.recordStatus()]
+        if self.convertvideo.isChecked():
+            parts.append(f"Video: {self.videoStatus()}")
+        self.statusline.setText(" &nbsp;&middot;&nbsp; ".join(parts))
+
+    def recordStatus(self) -> str:
+        resx, resy = helpers.toInt(self.resx.text()), helpers.toInt(self.resy.text())
+        if resx is None or resy is None:
+            return "Record: -"
+        mode = self.settings["advanced"].get("true_resolution", "auto")
+        separate = mode == "always" or (mode == "auto" and not self.fitsMaximizedViewport((resx, resy)))
+        where = "separate viewer" if separate else "viewport"
+        return f"Record: {resx}&times;{resy} in {where}"
+
+    def fitsMaximizedViewport(self, resolution) -> bool:
+        """Estimate: maximized viewport is about the size of the screen with the viewer (in device pixels)"""
+        try:
+            geometry = self.hou_viewport.getPaneTab().qtScreenGeometry()
+            screen = QGuiApplication.screenAt(geometry.center()) or QGuiApplication.primaryScreen()
+        except Exception:
+            screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return True
+        size = screen.availableGeometry().size() * screen.devicePixelRatio()
+        return resolution[0] <= size.width() and resolution[1] <= size.height()
+
+    def videoStatus(self) -> str:
+        advanced = self.settings["advanced"]
+        if self.fileformat.currentText() != "exr":
+            return "as is"
+        mode = advanced.get("color_transform", "ocio")
+        if mode != "ocio":
+            return {"srgb": "sRGB", "gamma22": "gamma 2.2", "bt709": "Rec.709", "none": "as is"}.get(mode, mode)
+        try:
+            display, view = ocio.displayView(self.hou_viewport.getPaneTab(),
+                                             advanced.get("ocio_display", ""), advanced.get("ocio_view", ""))
+        except Exception:
+            display = view = ""
+        if not isinstance(display, str) or not isinstance(view, str) or not display:
+            return "OCIO"
+        # full names are long ("sRGB - Display / ACES 1.0 - SDR Video"): view in the line, both in the tooltip
+        self.statusline.setToolTip(f"OCIO display: {display}\nOCIO view: {view}")
+        return f"OCIO {view}"
 
     def updateFileFormat(self):
         state = self.convertvideo.isChecked()
@@ -583,6 +650,11 @@ class DinoWriter(QWidget):
             for i,element in enumerate(empty_array):
                 string_of_empty += f"{str(i+1)}.{element}\n"
             hmsg(f"Empty line detected!\nPlease check values in:\n{string_of_empty}")
+            return 0
+
+        problem = helpers.nameProblem(self.filename.text())
+        if problem:
+            hmsg(problem)
             return 0
 
         data = self.saveState()
