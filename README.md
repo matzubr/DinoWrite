@@ -52,6 +52,16 @@ ui.DinoWriter(kwargs)
 ```
 Pay attention that `DinoWrite` is name of the folder that you copied to the python lib folder
 
+## Development
+---
+Local development uses [uv](https://docs.astral.sh/uv/). Houdini doesn't need it: it imports the folder directly.
+
+```
+uv sync            # create .venv with dev tools
+uv run pytest      # run tests (hou, pxr and PySide2 are stubbed)
+uv run ruff check  # lint
+```
+
 ### Credits
 - [Alexander Marchenko](https://www.linkedin.com/in/cg-alexander-marchenko/)
 - Alexandra Ushakova

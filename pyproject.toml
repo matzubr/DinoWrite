@@ -1,0 +1,25 @@
+[project]
+name = "dinowrite"
+version = "1.0.1"
+description = "Houdini tool to write flipbooks to disk"
+readme = "README.md"
+# Houdini 21 ships Python 3.11
+requires-python = ">=3.11,<3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+# Not an installable package: Houdini imports the folder directly from its python path
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
