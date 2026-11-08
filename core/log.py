@@ -19,14 +19,21 @@ class _HoudiniConsoleHandler(logging.Handler):
             self.handleError(record)
 
 def getLogger() -> logging.Logger:
-    """Package logger. Handler is added once, so reloading modules doesn't duplicate messages."""
+    """Package logger with exactly one DinoWrite handler.
+
+    Reloading this module defines a new handler class, so an isinstance() check misses the
+    handler added before the reload and messages get printed twice, three times...
+    Handlers are marked with an attribute instead, old ones are replaced.
+    """
     logger = logging.getLogger(LOGGER_NAME)
-    if not any(isinstance(h, _HoudiniConsoleHandler) for h in logger.handlers):
-        handler = _HoudiniConsoleHandler()
-        handler.setFormatter(logging.Formatter("[%(name)s] %(levelname)s: %(message)s"))
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-        logger.propagate = False
+    for old in [h for h in logger.handlers if getattr(h, "dinowrite", False)]:
+        logger.removeHandler(old)
+    handler = _HoudiniConsoleHandler()
+    handler.dinowrite = True
+    handler.setFormatter(logging.Formatter("[%(name)s] %(levelname)s: %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
     return logger
 
 log = getLogger()
