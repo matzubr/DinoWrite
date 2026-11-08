@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("PySide6.QtWidgets")
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 
 class FakeJob:
@@ -58,6 +59,8 @@ def test_progress_and_single_finish_callback(make_window):
     window.tick()
     window.tick()
     assert window.status.text() == "Done" and window.button.text() == "Close"
+    assert calls == []  # deferred: the final state is painted first
+    QApplication.processEvents()
     assert calls == ["done"]
 
 
@@ -67,6 +70,7 @@ def test_cancel_button_stops_job(make_window):
     window = make_window(job, on_finished=lambda: calls.append("finished"))
     window.button.click()
     assert job.cancelled and window.status.text() == "Cancelled"
+    QApplication.processEvents()
     assert calls == ["finished"]
 
 

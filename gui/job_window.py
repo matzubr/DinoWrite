@@ -130,7 +130,8 @@ class JobWindow(RoundedWindow, QWidget):
         if not self._notified:
             self._notified = True
             if self.on_finished is not None:
-                self.on_finished()
+                # After the final state is painted: opening the result may take a moment
+                QTimer.singleShot(0, self.on_finished)
 
     def cancelOrClose(self):
         if self.job.finished:
