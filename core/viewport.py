@@ -64,6 +64,51 @@ def _usdValue(attribute):
         return attribute.Get()
 
 
+# Display set types whose shading options are copied to the torn off viewer (missing ones are skipped)
+_DISPLAY_SETS = ("SceneObject", "SelectedObject", "GhostObject", "DisplayModel", "CurrentModel", "TemplateModel")
+
+
+def copySettings(source, target) -> int:
+    """Copy every value that has a getter/setter pair (lighting() / setLighting(...)) from source to target.
+
+    A cloned Scene Viewer starts with default display options (Normal Lighting etc.): the torn off copy
+    must look like the viewer the user set up. Pairs that need arguments or fail are skipped.
+    Returns how many values were changed.
+    """
+    changed = 0
+    for setter_name in dir(target):
+        if not setter_name.startswith("set") or len(setter_name) < 4 or not setter_name[3].isupper():
+            continue
+        getter_name = setter_name[3].lower() + setter_name[4:]
+        getter = getattr(source, getter_name, None)
+        target_getter = getattr(target, getter_name, None)
+        if not callable(getter) or not callable(target_getter):
+            continue
+        try:
+            value = getter()
+            if target_getter() != value:
+                getattr(target, setter_name)(value)
+                changed += 1
+        except Exception:  # noqa: BLE001 - getters with arguments, read-only/unsupported options
+            continue
+    return changed
+
+
+def copyViewportSettings(source, target):
+    """Viewport display options and per display set shading (wireframe, shaded...) from source to target"""
+    changed = copySettings(source, target)
+    display_set_type = getattr(hou, "displaySetType", None)
+    for name in _DISPLAY_SETS:
+        set_type = getattr(display_set_type, name, None)
+        if set_type is None:
+            continue
+        try:
+            changed += copySettings(source.displaySet(set_type), target.displaySet(set_type))
+        except Exception:  # noqa: BLE001
+            continue
+    log.info("Torn off viewer: %d display options copied from the viewer", changed)
+
+
 class HouViewport:
     def __init__(self,kwargs) -> None:
         # Started from a viewer (its shelf/hotkey): that one. From a shelf: the first Scene Viewer
@@ -145,6 +190,7 @@ class HouViewport:
                 pass
             torn._copyCameraFrom(self)
             torn.settings = clone.curViewport().settings()
+            copyViewportSettings(self.settings, torn.settings)
 
             panel.setPosition(self._screenOrigin())
             processEvents()

@@ -282,3 +282,53 @@ def test_record_restores_background_image_and_maximize_as_they_were():
     flipbook.record(viewer, FakeOptions(), (1920, 1080), mode="auto", hide_background_image=True)
     assert ("bgimage", True) not in viewer.events
     assert viewer.events[-1] == ("maximize", True)
+
+
+class FakeSettings:
+    """GeometryViewportSettings-like: getter/setter pairs, one getter that needs an argument"""
+
+    def __init__(self, lighting="normal", ao=False, shading="smooth"):
+        self._lighting, self._ao = lighting, ao
+        self.sets = {"scene": FakeDisplaySet(shading)}
+
+    def lighting(self):
+        return self._lighting
+
+    def setLighting(self, value):
+        self._lighting = value
+
+    def ambientOcclusion(self):
+        return self._ao
+
+    def setAmbientOcclusion(self, value):
+        self._ao = value
+
+    def visibleObjects(self, kind):  # needs an argument: skipped
+        return kind
+
+    def setVisibleObjects(self, value):
+        raise AssertionError("must not be called")
+
+    def displaySet(self, set_type):
+        return self.sets[set_type]
+
+
+class FakeDisplaySet:
+    def __init__(self, shading):
+        self._shading = shading
+
+    def shadedMode(self):
+        return self._shading
+
+    def setShadedMode(self, value):
+        self._shading = value
+
+
+def test_torn_off_viewer_gets_the_viewer_display_options(monkeypatch, hou):
+    """Headlight only in the viewer must stay headlight only in the torn off copy (clone starts with Normal)"""
+    monkeypatch.setattr(hou, "displaySetType", type("T", (), {"SceneObject": "scene"}), raising=False)
+    source = FakeSettings(lighting="headlight", ao=True, shading="flat")
+    target = FakeSettings()
+    viewport_mod.copyViewportSettings(source, target)
+    assert target.lighting() == "headlight" and target.ambientOcclusion() is True
+    assert target.sets["scene"].shadedMode() == "flat"
