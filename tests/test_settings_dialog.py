@@ -40,6 +40,12 @@ def test_validation_errors(dialog):
     assert len(errors) == 4
 
 
+def test_unknown_template_placeholder_is_rejected(dialog):
+    dialog.fb_folder.setText("$HIP/../preview/{shot}")
+    _, errors = dialog.collect()
+    assert any("unknown placeholder" in e for e in errors)
+
+
 def test_save_writes_only_changes(dialog, tmp_path):
     dialog.video_codec.setCurrentText("mpeg4")
     dialog.resolutions.setPlainText("4096   2160\n1920 1080")

@@ -259,6 +259,11 @@ class SettingsDialog(RoundedWindow, QDialog):
             errors.append("Flipbooks folder or file name must contain {name}")
         if not FRAME_TOKEN.search(paths["fb_name"]):
             errors.append("File name must contain a frame token like $F4")
+        for label, template in (("Flipbooks folder", paths["fb_folder"]), ("File name", paths["fb_name"])):
+            try:
+                template.format(name="shot", version="v001", fileformat="exr")
+            except (KeyError, IndexError, ValueError) as e:
+                errors.append(f"{label}: unknown placeholder {e}, use {{name}}, {{version}}, {{fileformat}}")
 
         advanced["delete_incomplete_fb"] = self.delete_incomplete.isChecked()
         advanced["true_resolution"] = self.true_resolution.currentData()

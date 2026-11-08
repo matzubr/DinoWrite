@@ -15,14 +15,14 @@ def no_preview_folder(houdini, tmp_path):
 
 @pytest.fixture
 def ui_calls(hou, monkeypatch):
-    calls = SimpleNamespace(messages=[], answer=0, started=[])
+    calls = SimpleNamespace(messages=[], answer=0, started=[], viewer=object())
 
     def display_message(text, **kwargs):
         calls.messages.append(text)
         return calls.answer
 
     monkeypatch.setattr(hou, "ui", SimpleNamespace(displayMessage=display_message,
-                                                   paneTabOfType=lambda *a, **k: None), raising=False)
+                                                   paneTabOfType=lambda *a, **k: calls.viewer), raising=False)
     monkeypatch.setattr(hou, "hipFile", SimpleNamespace(saveAndBackup=lambda: None), raising=False)
     return calls
 
@@ -70,3 +70,30 @@ def test_existing_folder_is_not_asked(window, ui_calls, no_preview_folder):
     window.main()
     assert ui_calls.messages == []
     assert ui_calls.started == ["flipbook"]
+
+
+def test_no_scene_viewer_shows_message_instead_of_traceback(no_preview_folder, ui_calls, monkeypatch):
+    import DinoWrite
+    from DinoWrite import main
+
+    ui_calls.viewer = None
+    messages = []
+    monkeypatch.setattr(main, "hmsg", lambda text, **kwargs: messages.append(text))
+    window = DinoWrite.show({})
+    assert not window.isVisible() and messages == ["No Scene Viewer to record a flipbook from"]
+
+
+def test_bad_resolution_is_reported_before_closing(window, ui_calls, monkeypatch):
+    from DinoWrite import main
+
+    messages = []
+    monkeypatch.setattr(main, "hmsg", lambda text, **kwargs: messages.append(text))
+    window.resx.setText("-")
+    window.main()
+    assert window.isVisible() and ui_calls.started == [] and "Resolution" in messages[0]
+
+
+def test_broken_last_used_file_is_ignored(window, tmp_path):
+    broken = tmp_path / "data.json"
+    broken.write_text('{"name": "sho')
+    assert window.load_json(broken) == {}

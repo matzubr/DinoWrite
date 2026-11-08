@@ -57,18 +57,17 @@ def fitPanel(set_size, get_panel_size, get_viewport_size, resolution: tuple,
 
 class HouViewport:
     def __init__(self,kwargs) -> None:
-        self.viewport_panetab = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)
+        # Started from a viewer (its shelf/hotkey): that one. From a shelf: the first Scene Viewer
+        pane_tab = kwargs.get("pane")
+        if pane_tab is not None and pane_tab.type() == hou.paneTabType.SceneViewer:
+            self.viewport_panetab = pane_tab
+        else:
+            self.viewport_panetab = hou.ui.paneTabOfType(hou.paneTabType.SceneViewer)
+            if hou.ui.paneTabOfType(hou.paneTabType.SceneViewer, 1):
+                log.warning("Multiple viewers detected! Run the tool from the shelf/hotkey of the viewer to record")
 
         if not self.viewport_panetab.isCurrentTab():
-            log.info("Starting the tool from a shelf leads to the recording of a flipbook from the first SceneViewer that comes across")
-            self.viewport_panetab.setIsCurrentTab()
-
-        if hou.ui.paneTabOfType(hou.paneTabType.SceneViewer,1):
-            paneTab = kwargs.get("pane")
-            if paneTab and paneTab.type() == hou.paneTabType.SceneViewer:
-                self.viewport_panetab = paneTab
-            else:
-                log.warning("Multiple viewers detected!\nYou can select a viewer by executing the tool from the desired")
+            self.viewport_panetab.setIsCurrentTab()  # a hidden tab can't be recorded
 
         self.viewport_pane = self.viewport_panetab.pane()
         self.settings = self.viewport_panetab.curViewport().settings()

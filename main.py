@@ -73,6 +73,14 @@ from .gui.settings_dialog import SettingsDialog, execDialog
 
 Icons = _Icons()
 
+def findOpenWindow(exclude=None):
+    """Visible DinoWrite window among Houdini main window children, or None"""
+    for w in hou.qt.mainWindow().children():
+        if w is not exclude and w.isWidgetType() and w.windowTitle() == WINDOW_TITLE and w.isVisible():
+            return w
+    return None
+
+
 class DinoWriter(RoundedWindow, QWidget):
 
     def __init__(self,kwargs):
@@ -81,6 +89,19 @@ class DinoWriter(RoundedWindow, QWidget):
         (Qt keeps it alive, so shelf script doesn't need to store a reference)
         '''
         super().__init__(hou.qt.mainWindow())
+
+        # Already open: focus it. Checked before touching the viewers (no tab switching for nothing)
+        opened = findOpenWindow(exclude=self)
+        if opened is not None:
+            log.info(f"{TITLE} is already open")
+            opened.raise_()
+            opened.activateWindow()
+            self.deleteLater()
+            return
+        if hou.ui.paneTabOfType(hou.paneTabType.SceneViewer) is None:
+            hmsg("No Scene Viewer to record a flipbook from")
+            self.deleteLater()
+            return
 
         '''
         Adding search path to Qt to be able to using "icons:filepath" prefix in stylesheets files
@@ -312,24 +333,7 @@ class DinoWriter(RoundedWindow, QWidget):
         self.updateFileFormat()
         self.updateResolutions()
         self.updateStatus()
-
-
-        '''
-        Track if widget opened via search through childrens of Houdini Window
-        Search by window title which we set in __init__
-        '''
-        flipbook_widget = None
-        for w in hou.qt.mainWindow().children():
-            if w is not self and w.isWidgetType() and w.windowTitle()==WINDOW_TITLE and w.isVisible():
-                    flipbook_widget = w
-
-        if flipbook_widget:
-            log.info(f"{TITLE} is already open")
-            flipbook_widget.raise_()
-            flipbook_widget.activateWindow()
-            self.deleteLater()
-        else:
-            self.show()
+        self.show()
 
     def eventFilter(self, source , event) -> bool:
         if  event.type() == QEvent.FocusIn or \
@@ -558,6 +562,11 @@ class DinoWriter(RoundedWindow, QWidget):
             hmsg(problem)
             return 0
 
+        self.updateResolutions()
+        if None in (helpers.toInt(self.resx.text()), helpers.toInt(self.resy.text())):
+            hmsg(f"Resolution should be numbers: {self.resx.text()} x {self.resy.text()}")
+            return 0
+
         if not self.confirmFlipbooksRoot():
             return 0
 
@@ -602,9 +611,12 @@ class DinoWriter(RoundedWindow, QWidget):
 
     def load_json(self, file):
         try:
-            with open(file, 'r') as f:
+            with open(file, encoding="utf-8") as f:
                 return json.load(f)
         except FileNotFoundError:
+            return {}
+        except (OSError, ValueError) as e:  # broken file (crash while writing): start with defaults
+            log.warning("Can't read last used values %s: %s", file, e)
             return {}
 
     def read_data(self, key, value):
