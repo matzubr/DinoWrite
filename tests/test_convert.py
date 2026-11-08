@@ -130,3 +130,23 @@ def test_cancel_during_ocio_keeps_sequence_and_skips_encode(settings, sequence, 
     assert fake_ffmpeg.calls == []
     assert len(list(sequence.parent.glob("*.exr"))) == 3
     assert not (sequence.parent / "_ocio_tmp").exists()
+
+
+def test_open_result(monkeypatch, tmp_path):
+    opened = []
+    monkeypatch.setattr(flipbook.wb, "open", opened.append)
+    video = tmp_path / "v001" / "shot.v001.mov"
+    video.parent.mkdir()
+    video.touch()
+
+    flipbook.openResult("video", video, video.parent, tmp_path)
+    flipbook.openResult("folder", video, video.parent, tmp_path)
+    flipbook.openResult("video", None, video.parent, tmp_path)
+    flipbook.openResult("video", None, tmp_path / "deleted", tmp_path)
+    assert opened == [video.as_uri(), video.parent.as_uri(), video.parent.as_uri(), tmp_path.as_uri()]
+
+
+def test_convert_returns_video_path(settings, sequence, fake_ffmpeg):
+    settings["advanced"]["color_transform"] = "srgb"
+    video = _convert(settings, sequence)
+    assert video == sequence.parent / "shot.v001.mov"

@@ -84,10 +84,6 @@ def start(data,kwargs):
            black_background=data.get("blackbg"),
            hide_background_image=data.get("bgimage"))
 
-    # #Open dir
-    if data.get("openfolder"):
-        wb.open(write_folder.as_uri())
-
     sequence_folder = output_filepath.parent
     files_keeped = sequence_folder.exists()
     if not files_keeped:
@@ -105,14 +101,34 @@ def start(data,kwargs):
             files_keeped=False
             log.warning(f"Incomplete flipbook deleted ({len(files)} of {fb_length} frames):\n{sequence_folder.as_posix()}")
 
+    video = None
     if data.get("convertvideo") and files_keeped:
-        convert(settingsfile, viewport,
+        video = convert(settingsfile, viewport,
                 sequence=output_filepath,
                 frame_padding=frame_padding,
                 frame_range=(frame_start, frame_end),
                 resolution=file_resolution,
                 pixel_aspect=float(data.get("aspect") or 1),
                 video_ext=fb_video_ext)
+
+    if data.get("openfolder"):
+        openResult(advanced.get("open_after", "video"), video, sequence_folder, write_folder)
+
+
+def openResult(open_after: str, video, sequence_folder: Path, write_folder: Path):
+    """Open the video in the default player, or the folder with the result.
+
+    open_after: "video" - the converted video if there is one, otherwise the sequence folder
+                "folder" - always the folder
+    """
+    if open_after == "video" and video is not None and Path(video).exists():
+        target = Path(video)
+    elif sequence_folder.exists():
+        target = sequence_folder
+    else:
+        target = write_folder
+    log.info("Opening: %s", target)
+    wb.open(target.as_uri())
 
 
 COLOR_TRANSFORMS = ("ocio", "srgb", "gamma22", "bt709", "none")
@@ -178,7 +194,7 @@ def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
 
 
 def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_range: tuple,
-            resolution: tuple, pixel_aspect: float, video_ext: str) -> bool:
+            resolution: tuple, pixel_aspect: float, video_ext: str):
     """Convert written flipbook sequence to video.
 
     Color (advanced.color_transform):
@@ -189,6 +205,9 @@ def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_
     Args:
         sequence (Path): flipbook output path with frame token, like .../name.v001.$F4.exr
         frame_padding (str): frame token in the file name, like "$F4"
+
+    Returns:
+        Path | None: written video, None when conversion failed or was cancelled
     """
     advanced = settings["advanced"]
     padding = int(frame_padding.replace("$F", "") or 1)
@@ -201,7 +220,7 @@ def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_
 
     converter = ffmpeg.FFmpeg(cmd=settings["ffmpeg_cmd"], binary=advanced.get("ffmpeg_path", ""))
     if not converter.available:
-        return False
+        return None
 
     ffmpeg_input = sequence
     temp_folder = None
@@ -212,7 +231,7 @@ def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_
         if getattr(result, "cancelled", False):
             shutil.rmtree(temp_folder, ignore_errors=True)
             log.warning("Video conversion cancelled, image sequence is kept")
-            return False
+            return None
         if result:
             ffmpeg_input = display_sequence
             color_transform = "none"  # already display-encoded
@@ -241,7 +260,7 @@ def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_
     if result and advanced.get("conversion_delete_input_sequence"):
         for frame in sequenceFiles(sequence, frame_padding):
             frame.unlink()
-    return bool(result)
+    return output_video if result else None
 
 
 def ocioTransform(advanced: dict, viewport, sequence: Path, display_sequence: Path,

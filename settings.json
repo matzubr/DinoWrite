@@ -44,6 +44,7 @@
     ],
     "advanced":{
         "true_resolution": "auto",
+        "open_after": "video",
         "ffmpeg_path": "",
         "color_transform": "ocio",
         "ocio_display": "",

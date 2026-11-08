@@ -21,6 +21,10 @@ TRUE_RESOLUTION = (
     ("always", "Always record in a separate viewer window"),
     ("off", "Maximized viewport (Houdini scales to the resolution)"),
 )
+OPEN_AFTER = (
+    ("video", "Converted video (or the folder without conversion)"),
+    ("folder", "Folder with the sequence"),
+)
 FROM_VIEWER = "From viewer"
 FRAME_TOKEN = re.compile(r"\$F\d+")
 
@@ -120,6 +124,9 @@ class SettingsDialog(QDialog):
         self.oiiotool_path.editingFinished.connect(self._updateToolsStatus)
 
         self.delete_input = QCheckBox("Delete image sequence after successful conversion")
+        self.open_after = QComboBox()
+        for key, label in OPEN_AFTER:
+            self.open_after.addItem(label, key)
 
         form = QFormLayout()
         form.addRow("Color", self.color_transform)
@@ -130,6 +137,7 @@ class SettingsDialog(QDialog):
         form.addRow("oiiotool", oiiotool_row)
         form.addRow("", self.tools_status)
         form.addRow("", self.delete_input)
+        form.addRow("Open result", self.open_after)
         return self._page(form)
 
     def _presetsTab(self) -> QWidget:
@@ -202,6 +210,7 @@ class SettingsDialog(QDialog):
         self.ffmpeg_path.setText(advanced.get("ffmpeg_path", ""))
         self.oiiotool_path.setText(advanced.get("oiiotool_path", ""))
         self.delete_input.setChecked(bool(advanced.get("conversion_delete_input_sequence")))
+        self.open_after.setCurrentIndex(max(self.open_after.findData(advanced.get("open_after", "video")), 0))
 
         self.resolutions.setPlainText("\n".join(settings.get("custom_resolution", [])))
         self.frame_ranges.setPlainText("\n".join(
@@ -235,6 +244,7 @@ class SettingsDialog(QDialog):
         advanced["ffmpeg_path"] = self.ffmpeg_path.text().strip()
         advanced["oiiotool_path"] = self.oiiotool_path.text().strip()
         advanced["conversion_delete_input_sequence"] = self.delete_input.isChecked()
+        advanced["open_after"] = self.open_after.currentData()
 
         resolutions = []
         for line in self._lines(self.resolutions):

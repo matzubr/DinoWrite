@@ -330,13 +330,13 @@ class DinoWriter(QWidget):
             "Off Background Image",self.read_data("bgimage", OFF_BACKGROUND_IMAGE_DEFAULT))
         offbackgroundimage_icon = widgets.HIcon(Icons.get("eye-slash.svg",type="Path"),size=15)
         self.openwritefolder =    widgets.CheckBox(
-            "Open write folder",self.read_data("openfolder", OPEN_WRITE_FOLDER_DEFAULT))
+            "Open result",self.read_data("openfolder", OPEN_WRITE_FOLDER_DEFAULT))
         openwritefolder_icon = widgets.HIcon(Icons.get("folder-open.svg",type="Path"),size=15)
         
         self.convertvideo.setToolTip("After the end of recording the flipbook,the entire \nsequence of files will be converted to video via ffmpeg")
         self.blackbackground.setToolTip("When recording a flipbook with white/gray background colors , the final \nimage turns out to be incorrect. \n\nThis checkbox switches the background to black during the recording of the flipbook")
         self.offbackgroundimage.setToolTip("When you use a shot sequence on the background, sometimes \nyou have to turn it off to record pure 3d and put \nthe background on the composition\n\nThis checkbox disable the background for the time of recording the flipbook and then \nreturn it to its original state")
-        self.openwritefolder.setToolTip("After finishing recording, the flipbook opens the folder where it was recorded.")
+        self.openwritefolder.setToolTip("After finishing: opens the converted video in the default player,\nor the folder with the sequence (see Settings -> Video -> Open result)")
 
         convertvideo_layout =       widgets.HLayout([self.convertvideo,convertvideo_icon])
         blackbackground_layout =    widgets.HLayout([self.blackbackground,blackbackground_icon])
