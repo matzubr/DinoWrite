@@ -18,7 +18,6 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
  - Shows existing flipbooks (can grab their name)
  - Grabs resolution from camera or divides it in half
  - Works with Houdini 21+ (PySide6 / Qt6) and older Qt5 builds (PySide2)
- - Custom metadata (DEV)
 
 ## Installation
 ---
@@ -98,7 +97,6 @@ moving to the next one if an encoder fails. The `{codec}` line in the ffmpeg com
 - After a successful conversion the image sequence is deleted (`conversion_delete_input_sequence`, on by default). Only frames of that sequence are removed, other files in the folder are kept. Cancelled or failed conversion always keeps the sequence
 - `delete_incomplete_fb` (off by default) deletes a sequence that doesn't cover the frame range
 - Sequences are written in native pixel aspect, Houdini flipbooks can't write it with the original resolution. Fix it in Nuke with a Reformat node; ffmpeg conversion applies the pixel aspect to the video
-- `aspect_affects_resolution` and `metadata` in `settings.json` are not implemented yet (DEV)
 
 ## Tips
 ---
