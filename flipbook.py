@@ -135,8 +135,8 @@ def start(data,kwargs):
         start_frame = int(frame_start)
 
         ffmpeg = utils.FFmpeg(config_path=None,
-                            bin=Path(__file__).parent / "bin",
-                            cmd=ffmpeg_cmd)
+                            cmd=ffmpeg_cmd,
+                            binary=advanced.get("ffmpeg_path", ""))
 
         input_files = output_filepath.as_posix().replace(frame_padding, f"%{frame_padding_int}d")
         output_video = (output_filepath.parent /

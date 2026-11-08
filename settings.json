@@ -39,6 +39,7 @@
         "{output}"
     ],
     "advanced":{
+        "ffmpeg_path": "",
         "delete_incomplete_fb":false,
         "conversion_delete_input_sequence":true,
         "aspect_affects_resolution":false,

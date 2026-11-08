@@ -148,28 +148,52 @@ class StyleSheet:
         else:
             return data[element]
 
+def findFFmpeg(custom_path: str = "") -> str:
+    """Find ffmpeg executable, same lookup order as Houdini's FFmpeg Encode Video TOP.
+
+    1. custom_path from settings.json (advanced.ffmpeg_path)
+    2. $PDG_FFMPEG environment variable
+    3. ffmpeg that ships with Houdini: $HFS/bin/hffmpeg
+    4. ffmpeg from system PATH
+
+    Returns:
+        str: Path to executable or empty string if nothing found
+    """
+    candidates = []
+    if custom_path:
+        candidates.append(hou.text.expandString(custom_path))
+    if osenviron.get("PDG_FFMPEG"):
+        candidates.append(osenviron["PDG_FFMPEG"])
+    hfs = hou.getenv("HFS")
+    if hfs:
+        exe = ".exe" if hou.getenv("OS") == "Windows_NT" else ""
+        candidates.append((Path(hfs) / "bin" / f"hffmpeg{exe}").as_posix())
+
+    for candidate in candidates:
+        if Path(candidate).is_file():
+            return candidate
+        log.warning("ffmpeg not found at: %s", candidate)
+
+    return shutil.which("ffmpeg") or ""
+
 class FFmpeg:
     """Wrapper around ffmpeg
     """
-    def __init__(self, config_path: str, bin: str,cmd: dict) -> None:
-        
+    def __init__(self, config_path: str, cmd: list, binary: str = "") -> None:
+
         self.config_path = config_path
         self.cmdvar = cmd
-        self.available = True
-        system_os = hou.getenv("OS")
+        self.binary = findFFmpeg(binary)
+        self.available = bool(self.binary)
 
         if not config_path and not cmd:
             log.warning("No config path or cmd set")
 
-        # Check for ffmpeg availability in system envs on different os (i believe)
-        if system_os=="Windows_NT" and (Path(bin) / "ffmpeg.exe").exists():
-            path = osenviron["PATH"]
-            if str(bin) not in path.split(";"):
-                osenviron["PATH"] = f"{bin};{path}"
-        elif not shutil.which("ffmpeg"):
-            self.available = False
-            location = f" or in {bin}" if system_os=="Windows_NT" else ""
-            hmsg(f"No ffmpeg found in system PATH env{location}\nVideo conversion skipped, sequence is kept")
+        if self.available:
+            log.info("Using ffmpeg: %s", self.binary)
+        else:
+            hmsg("No ffmpeg found (settings, $PDG_FFMPEG, $HFS/bin/hffmpeg, system PATH)\n"
+                 "Video conversion skipped, sequence is kept")
 
     def cmd(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="") -> list:
 
@@ -189,6 +213,10 @@ class FFmpeg:
             for token in key.split():
                 commands.append(token.format(fps=fps, resolution=resolution, aspect=aspect,
                                             start_frame=start_frame, input=input, output=output))
+
+        # "ffmpeg" in template means "the resolved executable"
+        if commands and commands[0] == "ffmpeg" and getattr(self, "binary", ""):
+            commands[0] = self.binary
 
         return commands
 

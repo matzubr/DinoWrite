@@ -49,3 +49,37 @@ def test_logger_has_single_handler_after_reload(utils):
     ours = [h for h in logger.handlers if isinstance(h, utils._HoudiniConsoleHandler)]
     assert len(ours) == 1
     assert logger.name == "DinoWrite"
+
+
+def _fake_env(monkeypatch, utils, env):
+    monkeypatch.setattr(utils.hou, "getenv", lambda name, default=None: env.get(name, default))
+
+
+def test_find_ffmpeg_prefers_houdini_hffmpeg(utils, tmp_path, monkeypatch):
+    hffmpeg = tmp_path / "bin" / "hffmpeg"
+    hffmpeg.parent.mkdir()
+    hffmpeg.touch()
+    _fake_env(monkeypatch, utils, {"HFS": tmp_path.as_posix()})
+    monkeypatch.delenv("PDG_FFMPEG", raising=False)
+    assert utils.findFFmpeg() == hffmpeg.as_posix()
+
+
+def test_find_ffmpeg_custom_path_wins(utils, tmp_path, monkeypatch):
+    custom = tmp_path / "my_ffmpeg"
+    custom.touch()
+    _fake_env(monkeypatch, utils, {})
+    assert utils.findFFmpeg(custom.as_posix()) == custom.as_posix()
+
+
+def test_find_ffmpeg_falls_back_to_path(utils, tmp_path, monkeypatch):
+    _fake_env(monkeypatch, utils, {"HFS": (tmp_path / "no_houdini").as_posix()})
+    monkeypatch.delenv("PDG_FFMPEG", raising=False)
+    monkeypatch.setattr(utils.shutil, "which", lambda name: "/usr/bin/ffmpeg")
+    assert utils.findFFmpeg() == "/usr/bin/ffmpeg"
+
+
+def test_ffmpeg_cmd_uses_resolved_binary(utils):
+    ffmpeg = utils.FFmpeg.__new__(utils.FFmpeg)
+    ffmpeg.cmdvar = ["ffmpeg", "-i {input}", "{output}"]
+    ffmpeg.binary = "/opt/hfs/bin/hffmpeg"
+    assert ffmpeg.cmd(input="in.exr", output="out.mov")[0] == "/opt/hfs/bin/hffmpeg"
