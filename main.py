@@ -272,6 +272,7 @@ class DinoWriter(RoundedWindow, QWidget):
                                         ("bgimage", self.offbackgroundimage, offbackgroundimage_icon)):
                 self.solaris_kept[key] = checkbox.isChecked()
                 checkbox.setChecked(False)
+                checkbox.setCursor(Qt.ForbiddenCursor)
                 for widget in (checkbox, icon):
                     widget.setEnabled(False)
                     widget.setToolTip("Not available in Solaris: changing viewport options from Python\n"
@@ -406,6 +407,8 @@ class DinoWriter(RoundedWindow, QWidget):
             return "Record: -"
         mode = self.settings["advanced"].get("true_resolution", "auto")
         separate = mode == "always" or (mode == "auto" and not self.fitsMaximizedViewport((resx, resy)))
+        if separate and getattr(self.hou_viewport, "isLop", lambda: False)():
+            return f"Record: {resx}×{resy} in viewport (Solaris: scaled)"
         where = "separate viewer" if separate else "viewport"
         return f"Record: {resx}×{resy} in {where}"
 
