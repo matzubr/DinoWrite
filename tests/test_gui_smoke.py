@@ -77,3 +77,16 @@ def test_status_line_shows_record_and_video(houdini, hou, monkeypatch):
     window.updateStatus()
     assert window.statusline.text() == "Record: 640&times;480 in viewport"
     window.close()
+
+
+def test_window_has_smooth_transparent_corners(houdini):
+    import DinoWrite
+
+    window = DinoWrite.show({})
+    image = window.grab().toImage()
+    assert image.pixelColor(0, 0).alpha() == 0, "corner must be transparent"
+    assert image.pixelColor(image.width() // 2, image.height() - 2).alpha() == 255
+    # antialiased edge: some partially transparent pixels along the corner arc
+    arc = [image.pixelColor(x, 2).alpha() for x in range(0, 15)]
+    assert any(0 < a < 255 for a in arc)
+    window.close()

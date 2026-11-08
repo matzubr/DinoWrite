@@ -15,6 +15,8 @@ if BRANCH=="main":
 
 WINDOW_WIDTH = 430
 WINDOW_HIGHT = 490
+WINDOW_RADIUS = 15
+WINDOW_OBJECT_NAME = "DinoWriterWindow"
 WIDTH_OFFSET = 20
 HIGHT_OFFSET = 90
 
@@ -184,19 +186,16 @@ class DinoWriter(QWidget):
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setFixedSize(WINDOW_WIDTH,WINDOW_HIGHT)
-        self.setStyleSheet(f"background-color:{COLORS_PALLETE['grey-bright']};")
-
 
         '''
-        Setting round edges on widget
-        It seems to me that this option is bad, since the 
-        mask is bitwise , which causes ugly aliasing at the edges
+        Round edges: transparent window + antialiased rounded rect in paintEvent
+        (a setMask() region is 1-bit and gives jagged edges)
+        Children keep the old background color, the window itself paints nothing via stylesheet
         '''
-        radius = 15
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(self.rect()), radius, radius)
-        mask = QRegion(path.toFillPolygon().toPolygon())
-        self.setMask(mask)
+        self.setObjectName(WINDOW_OBJECT_NAME)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setStyleSheet(f"background-color:{COLORS_PALLETE['grey-bright']};"
+                           f"QWidget#{WINDOW_OBJECT_NAME} {{background-color: transparent;}}")
 
 
         '''
@@ -429,6 +428,14 @@ class DinoWriter(QWidget):
             self.deleteLater()
         else:
             self.show()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(COLORS_PALLETE["grey-bright"]))
+        painter.drawRoundedRect(QRectF(self.rect()), WINDOW_RADIUS, WINDOW_RADIUS)
+        painter.end()
 
     def eventFilter(self, source , event) -> bool:
         if  event.type() == QEvent.FocusIn or \

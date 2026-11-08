@@ -15,8 +15,9 @@ This is a fully Python tool that allows you to write flipbooks in Houdini
  - Support multiple viewports
  - Displaying existing flipbooks (can grab their name)
  - Grabs resolution from camera or divides it in half
- - Convert the sequence to video using FFmpeg
- - Opening the writing folder after flipbook is done 
+ - Convert the sequence to video using FFmpeg, with progress and cancel (Esc)
+ - Status line shows how the flipbook will be recorded and encoded, flipbook name is checked while typing
+ - Opening the result after flipbook is done: the converted video or the folder
  - A bunch of tips and tricks that I used in my workflow
  - Custom metadata (DEV)
 ## Tips
