@@ -7,7 +7,11 @@ import hou
 from .. import config
 from ..core import ffmpeg, ocio
 from ..core.log import log
+from . import widgets
+from .frameless import RoundedWindow, TitleBar
 from .qt import *  # noqa: F403
+from .resources import ICONS_FOLDER
+from .theme import COLORS
 
 COLOR_TRANSFORMS = (
     ("ocio", "OCIO display/view (like the viewer)"),
@@ -29,6 +33,52 @@ FROM_VIEWER = "From viewer"
 FRAME_TOKEN = re.compile(r"\$F\d+")
 
 
+OBJECT_NAME = "DinoWriteSettings"
+BODY_NAME = "DinoWriteSettingsBody"
+DIALOG_WIDTH = 620
+
+
+def bodyStyle() -> str:
+    """Same look as the main window: stylesheets.json entries + tabs/text edits/spin boxes in that palette"""
+    styles = widgets.styles
+    line_edit = styles.get("lineedit")
+    return "".join([
+        styles.get("label"), line_edit, styles.get("mainbutton"), styles.get("combobox"),
+        styles.get("checkbox"), styles.get("menu"),
+        line_edit.replace("QLineEdit", "QPlainTextEdit"),
+        line_edit.replace("QLineEdit", "QSpinBox"),
+        f"""
+        QTabWidget::pane {{
+            background-color: {COLORS['grey']};
+            border: 1px solid #202020;
+            border-radius: 5px;
+            top: -1px;
+        }}
+        QTabWidget > QWidget > QWidget {{ background-color: {COLORS['grey']}; }}
+        QTabBar::tab {{
+            background-color: qlineargradient(x1:1, y1:0, x2:1, y2:1, stop:0 #545454, stop:1 #3b3b3b);
+            color: #dddddd;
+            border: 1px solid #202020;
+            border-bottom: none;
+            border-top-left-radius: 5px;
+            border-top-right-radius: 5px;
+            padding: 5px 14px;
+            margin-right: 2px;
+        }}
+        QTabBar::tab:selected {{ background-color: {COLORS['grey']}; color: #ffffff; border-color: {COLORS['accent']}; }}
+        QTabBar::tab:hover:!selected {{ background-color: rgba(183, 134, 32, 20%); }}
+        QToolTip {{ background-color: {COLORS['grey-dark']}; color: {COLORS['white']}; border: 1px solid #343434; }}
+        QScrollBar:vertical, QScrollBar:horizontal {{ background: {COLORS['grey-dark']}; border: none; margin: 0; }}
+        QScrollBar:vertical {{ width: 10px; }}
+        QScrollBar:horizontal {{ height: 10px; }}
+        QScrollBar::handle {{ background: #4a4a4a; border-radius: 4px; min-height: 20px; min-width: 20px; }}
+        QScrollBar::handle:hover {{ background: {COLORS['accent']}; }}
+        QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+        QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
+        """,
+    ])
+
+
 def _ocioList(getter, *args) -> list:
     try:
         return list(getter(*args))
@@ -36,13 +86,17 @@ def _ocioList(getter, *args) -> list:
         return []
 
 
-class SettingsDialog(QDialog):
+class SettingsDialog(RoundedWindow, QDialog):
     """Edit DinoWrite settings. exec() returns Accepted when settings were saved."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("DinoWrite Settings")
-        self.setMinimumWidth(560)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setFixedWidth(DIALOG_WIDTH)
+        self.setupRoundedWindow(OBJECT_NAME)
+        QDir.addSearchPath("icons", ICONS_FOLDER.as_posix())  # checkbox/combobox images in stylesheets
+        self.setFont(QFont(widgets.MAIN_FONT, widgets.MAIN_SIZE - 1))
         self.settings = config.load()
 
         tabs = QTabWidget()
@@ -63,12 +117,22 @@ class SettingsDialog(QDialog):
         reset_button.clicked.connect(self.resetToDefaults)
         folder_button.clicked.connect(self.openSettingsFolder)
 
+        body = QWidget()
+        body.setObjectName(BODY_NAME)
+        body.setStyleSheet(bodyStyle())
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(10, 0, 10, 10)
+        body_layout.addWidget(tabs)
+        body_layout.addWidget(user_file)
+        body_layout.addWidget(buttons)
+
         layout = QVBoxLayout(self)
-        layout.addWidget(tabs)
-        layout.addWidget(user_file)
-        layout.addWidget(buttons)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(TitleBar(self, "Settings", icon_size=34, title_size=12, on_close=self.reject))
+        layout.addWidget(body)
 
         self.load(self.settings)
+        self.adjustSize()
 
     # ---------- tabs ----------
 
@@ -127,7 +191,7 @@ class SettingsDialog(QDialog):
         self.ffmpeg_path, ffmpeg_row = self._pathRow("Empty: $PDG_FFMPEG, $HFS/bin/hffmpeg, system PATH")
         self.oiiotool_path, oiiotool_row = self._pathRow("Empty: $HFS/bin/hoiiotool, system PATH")
         self.tools_status = QLabel()
-        self.tools_status.setWordWrap(True)
+        # no word wrap: QFormLayout gets the height of a wrapped label wrong and rows overlap
         self.tools_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.ffmpeg_path.editingFinished.connect(self._updateToolsStatus)
         self.oiiotool_path.editingFinished.connect(self._updateToolsStatus)
@@ -157,6 +221,8 @@ class SettingsDialog(QDialog):
         self.frame_ranges = QPlainTextEdit()
         self.frame_ranges.setPlaceholderText("From Current Frame To Global End = $F $FEND")
 
+        for edit in (self.resolutions, self.frame_ranges):
+            edit.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         layout = QVBoxLayout()
         layout.addWidget(QLabel("Resolutions, one per line: width height"))
         layout.addWidget(self.resolutions)
@@ -322,6 +388,9 @@ class SettingsDialog(QDialog):
             f"encoders (auto order): {', '.join(encoders) or 'unknown'}\n"
             f"oiiotool: {oiiotool_found or 'NOT FOUND (OCIO falls back to sRGB)'}\n"
             f"OCIO config: {ocio.configPath() or 'unknown'}")
+        # the form layout sized this row before the text was set: reserve height for every line
+        lines = self.tools_status.text().count("\n") + 1
+        self.tools_status.setMinimumHeight(self.tools_status.fontMetrics().lineSpacing() * lines + 4)
 
     # ---------- buttons ----------
 

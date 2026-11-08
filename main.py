@@ -605,7 +605,7 @@ class DinoWriter(RoundedWindow, QWidget):
         return data
 
     def openSettings(self):
-        dialog = SettingsDialog(hou.qt.mainWindow())
+        dialog = SettingsDialog(self)  # centered over DinoWrite, same look
         if execDialog(dialog) == QDialog.Accepted:
             # Rebuild the window with new settings, keeping current field values
             self.saveState()
