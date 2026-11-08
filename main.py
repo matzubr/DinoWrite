@@ -361,9 +361,13 @@ class DinoWriter(RoundedWindow, QWidget):
                                     (f"QLineEdit {{border: 1px solid {COLORS_PALLETE['red']};}}" if problem else ""))
         self.writebutton.setEnabled(not problem)
         self.writebutton.setToolTip(problem)
-        status_color = COLORS_PALLETE["crimson"] if problem else "#ffffff"
+        warning = "" if problem else self.aspectWarning()
+        status_color = COLORS_PALLETE["crimson"] if problem else (COLORS_PALLETE["orange"] if warning else "#ffffff")
         self.statusline.setStyleSheet(f"background-color: transparent; color: {status_color};")
-        self.statusline.setText(problem or self.recordStatus())
+        self.statusline.setExtraToolTip(
+            "Resolution aspect differs from the camera: Houdini stretches the image to it.\n"
+            "Use 'Camera Resolution' in the resolution menu (or 1/2, 2/3 of it)." if warning else "")
+        self.statusline.setText(problem or warning or self.recordStatus())
 
         self.videoline.setExtraToolTip("")
         parts = [f"Video: {self.videoStatus()}" if self.convertvideo.isChecked() else "Video: off"]
@@ -372,6 +376,16 @@ class DinoWriter(RoundedWindow, QWidget):
         if self.fileformat.currentText() == "exr" and advanced.get("exr_acescg", True) and keeps_exr:
             parts.append("EXR: ACEScg")
         self.videoline.setText(" · ".join(parts))
+
+    def aspectWarning(self) -> str:
+        """Resolution with another aspect than the camera: the flipbook comes out squashed/stretched"""
+        resx, resy = helpers.toInt(self.resx.text()), helpers.toInt(self.resy.text())
+        camera_aspect = getattr(self.hou_viewport, "cameraAspect", lambda: None)()
+        if not resx or not resy or not isinstance(camera_aspect, (int, float)) or camera_aspect <= 0:
+            return ""
+        if abs(resx / resy - camera_aspect) <= 0.01 * camera_aspect:
+            return ""
+        return f"Record: {resx}×{resy} ≠ camera aspect {camera_aspect:.2f}, image will be stretched"
 
     def recordStatus(self) -> str:
         resx, resy = helpers.toInt(self.resx.text()), helpers.toInt(self.resy.text())

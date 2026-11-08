@@ -246,48 +246,65 @@ class HouViewport:
             return (size[2], size[3])
 
     def _cameraResolution(self):
-        network = self.viewport_panetab.pwd().childTypeCategory().name()
         viewport = self.viewport_panetab.curViewport()
+        size = viewport.size()
+        if self._isLop():
+            resolution = self._renderSettingsResolution()
+            if resolution:
+                return resolution
+            # No render settings: Houdini shows the camera at the viewport width with the camera's aspect
+            # (e.g. "1295 x 728" in the viewer). The whole viewport (1295x1096) would squash the image.
+            aspect = self._usdCameraAspect()
+            if aspect:
+                return (size[2], max(1, round(size[2] / aspect)))
+            log.info("No camera in the viewport, returning the viewport size")
+            return (size[2], size[3])
 
-        if network=="Lop":
+        camera = viewport.camera()
+        if camera:
+            return (camera.evalParm("resx"), camera.evalParm("resy"))
+        log.info("No camera in the viewport, returning the viewport size")
+        return (size[2], size[3])
 
-            stage = self.viewport_panetab.stage()
-            render_prims = [p for p in stage.Traverse() if p.GetTypeName()=="RenderSettings"]
-            if len(render_prims)==0:
-                size = viewport.size()
-                resx = size[2]
-                resy = size[3]
-                
-            elif len(render_prims)>0:
-                if len(render_prims)>1:
-                    log.warning("Multiple rendersettings prims detected!\nResolution will be taken from the first alphabetically ordered prim")
-                render_prim = render_prims[0]
-                resolution_prop = render_prim.GetProperty("resolution")
-                resolution = resolution_prop.Get() if resolution_prop else None
-                if resolution:
-                    resx = resolution[0]
-                    resy = resolution[1]
-                else:
-                    log.warning("No resolution authored on rendersettings prim\nReturning resolution from viewport size")
-                    size = viewport.size()
-                    resx = size[2]
-                    resy = size[3]
-        
-        else: #proccess obj and sops
-            
-            camera = viewport.camera()
-            if camera:
-                resx = camera.evalParm("resx")
-                resy = camera.evalParm("resy")
-            else:
-                log.info("No Camera Found in viewport\nReturning resolution from viewport size")
-                size = viewport.size()
-                resx = size[2]
-                resy = size[3]
-                
-            
-        return tuple((resx, resy))
-    
+    def _isLop(self) -> bool:
+        return self.viewport_panetab.pwd().childTypeCategory().name() == "Lop"
+
+    def _renderSettingsPrim(self):
+        stage = self.viewport_panetab.stage()
+        render_prims = [p for p in stage.Traverse() if p.GetTypeName() == "RenderSettings"] if stage else []
+        if len(render_prims) > 1:
+            log.warning("Multiple render settings prims, using the first one: %s", render_prims[0].GetPath())
+        return render_prims[0] if render_prims else None
+
+    def _renderSettingsResolution(self):
+        prim = self._renderSettingsPrim()
+        attribute = prim.GetAttribute("resolution") if prim else None
+        resolution = attribute.Get() if attribute else None
+        return (int(resolution[0]), int(resolution[1])) if resolution else None
+
+    def _usdCameraAspect(self):
+        """Image aspect of the viewport's USD camera (horizontalAperture / verticalAperture), None without one"""
+        stage = self.viewport_panetab.stage()
+        path = self.viewport_panetab.curViewport().cameraPath()
+        prim = stage.GetPrimAtPath(path) if stage and path else None
+        if not prim or not prim.IsValid():
+            return None
+        horizontal = prim.GetAttribute("horizontalAperture").Get()
+        vertical = prim.GetAttribute("verticalAperture").Get()
+        return float(horizontal) / float(vertical) if horizontal and vertical else None
+
+    def cameraAspect(self):
+        """Image aspect (width / height) the camera renders with, None without a camera or when unknown.
+        A flipbook resolution with another aspect comes out stretched."""
+        try:
+            if self._isLop():
+                resolution = self._renderSettingsResolution()
+                return resolution[0] / resolution[1] if resolution else self._usdCameraAspect()
+            camera = self.viewport_panetab.curViewport().camera()
+            return camera.evalParm("resx") / camera.evalParm("resy") if camera else None
+        except Exception:  # noqa: BLE001 - only a status hint
+            return None
+
     def cameraPixelAspect(self):
         try:
             return float(self._cameraPixelAspect())
@@ -296,32 +313,13 @@ class HouViewport:
             return 1.0
 
     def _cameraPixelAspect(self):
-        network = self.viewport_panetab.pwd().childTypeCategory().name()
-        viewport = self.viewport_panetab.curViewport()
-
-        if network=="Lop":
-
-            stage = self.viewport_panetab.stage()
-            render_prims = [p for p in stage.Traverse() if p.GetTypeName()=="RenderSettings"]
-            if len(render_prims)==0:
-                aspect = 1
-            elif len(render_prims)>0:
-                render_prim = render_prims[0]
-                aspect_prop = render_prim.GetProperty("pixelAspectRatio")
-                aspect = aspect_prop.Get() if aspect_prop else None
-                aspect = float(aspect) if aspect else 1
-        
-        else: #procces obj and sops
-
-            camera = viewport.camera()
-            if camera:
-                aspect = camera.evalParm("aspect")
-            else:
-                # log.debug("No Camera Found in viewport\nReturning aspect 1")
-                aspect = 1
-        
-        
-        return aspect
+        if self._isLop():
+            prim = self._renderSettingsPrim()
+            attribute = prim.GetAttribute("pixelAspectRatio") if prim else None
+            aspect = attribute.Get() if attribute else None
+            return float(aspect) if aspect else 1.0
+        camera = self.viewport_panetab.curViewport().camera()
+        return camera.evalParm("aspect") if camera else 1.0
 
     def cameraName(self):
         viewport = self.viewport_panetab.curViewport()
