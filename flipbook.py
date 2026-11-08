@@ -1,3 +1,4 @@
+import tempfile
 from pathlib import Path
 from re import search
 
@@ -7,7 +8,7 @@ import webbrowser as wb
 from . import config
 from .core import conversion, helpers
 from .core.log import hmsg, log
-from .core.viewport import TRUE_RESOLUTION_MODES, HouViewport, processEvents, fitsResolution
+from .core.viewport import TRUE_RESOLUTION_MODES, HouViewport, fitsResolution
 
 def start(data,kwargs):
 
@@ -153,8 +154,7 @@ def chooseRecorder(viewport, resolution: tuple, mode: str):
         return viewport
     if mode == "auto":
         viewport.maximize_viewport()
-        processEvents()
-        if fitsResolution(viewport.viewportSize(), resolution):
+        if fitsResolution(viewport.settle(), resolution):
             return viewport
         viewport.maximize_viewport(False)
     try:
@@ -180,6 +180,7 @@ def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
         if recorder is viewport:
             # Maximize window to get better quality
             viewport.maximize_viewport()
+            viewport.settle()
 
         # Remember viewer state before changing it
         if black_background:
@@ -188,6 +189,7 @@ def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
         if hide_background_image:
             recorder.displayBackgroundImage(False)
 
+        warmUp(recorder, flipbook_options)
         recorder.startFlipbook(flipbook_options)
     finally:
         if prev_color_scheme is not None:
@@ -196,6 +198,24 @@ def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
             recorder.displayBackgroundImage()
         recorder.close()
         viewport.maximize_viewport(False)
+
+
+def warmUp(recorder, flipbook_options):
+    """Render one throwaway frame before the real flipbook.
+
+    The viewport was just resized (maximized or torn off at 4K): even after it settled, the first
+    flipbook frame could come out at the old size. One frame into a temp folder takes that hit.
+    """
+    try:
+        warm = flipbook_options.stash()
+        first = flipbook_options.frameRange()[0]
+        with tempfile.TemporaryDirectory(prefix="dinowrite_warmup_") as temp:
+            warm.output((Path(temp) / "warmup.$F4.jpg").as_posix())
+            warm.frameRange((first, first))
+            warm.outputToMPlay(False)
+            recorder.startFlipbook(warm)
+    except Exception as e:  # warm-up is only an optimization, never block the real flipbook
+        log.warning("Warm-up frame failed: %s", e)
 
 
 def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_range: tuple,

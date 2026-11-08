@@ -1,4 +1,6 @@
 """Wrapper around Houdini Scene Viewer used for flipbooking"""
+import time
+
 import hou
 
 from .log import log
@@ -81,6 +83,31 @@ class HouViewport:
         viewer.torn_off_panel = None
         return viewer
 
+    def settle(self, timeout: float = 2.0, stable_checks: int = 3) -> tuple:
+        """Wait until the viewport has redrawn at its new size.
+
+        After a resize Houdini resizes the GL buffers on the next redraw; a flipbook started right
+        away renders its first frame with the old (smaller) buffer.
+
+        Returns:
+            tuple: viewport size after it stopped changing
+        """
+        deadline = time.monotonic() + timeout
+        last, stable = None, 0
+        while time.monotonic() < deadline:
+            processEvents()
+            try:
+                self.viewport_panetab.curViewport().draw()
+            except (AttributeError, hou.Error):
+                pass
+            size = self.viewportSize()
+            stable = stable + 1 if size == last else 0
+            last = size
+            if stable >= stable_checks:
+                break
+            time.sleep(0.05)
+        return last
+
     def viewportSize(self) -> tuple:
         """Current viewport size (width, height) in device pixels"""
         size = self.viewport_panetab.curViewport().size()
@@ -114,11 +141,12 @@ class HouViewport:
             panel.setPosition(self._screenOrigin())
             processEvents()
             window = panel.qtParentWindow()
-            achieved = fitPanel(set_size=panel.setSize,
-                                get_panel_size=lambda: tuple(panel.size()),
-                                get_viewport_size=torn.viewportSize,
-                                resolution=resolution,
-                                device_pixel_ratio=window.devicePixelRatioF() if window else 1.0)
+            fitPanel(set_size=panel.setSize,
+                     get_panel_size=lambda: tuple(panel.size()),
+                     get_viewport_size=torn.viewportSize,
+                     resolution=resolution,
+                     device_pixel_ratio=window.devicePixelRatioF() if window else 1.0)
+            achieved = torn.settle()
         except Exception:
             torn.close()
             raise

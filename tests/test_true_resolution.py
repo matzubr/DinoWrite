@@ -54,6 +54,10 @@ class FakeViewer:
     def viewportSize(self):
         return self.size
 
+    def settle(self):
+        self.events.append(("settle",))
+        return self.size
+
     def maximize_viewport(self, on=True):
         self.events.append(("maximize", on))
 
@@ -71,7 +75,7 @@ class FakeViewer:
         self.events.append(("bgimage", on))
 
     def startFlipbook(self, options):
-        self.events.append(("flipbook",))
+        self.events.append(("warmup",) if options is not None and options.is_warmup else ("flipbook",))
 
     def close(self):
         self.events.append(("close",))
@@ -79,7 +83,29 @@ class FakeViewer:
 
 @pytest.fixture(autouse=True)
 def no_qt(monkeypatch):
-    monkeypatch.setattr(flipbook, "processEvents", lambda: None)
+    monkeypatch.setattr(viewport_mod, "processEvents", lambda: None)
+
+
+class FakeOptions:
+    def __init__(self, is_warmup=False):
+        self.is_warmup = is_warmup
+        self.range, self.out, self.mplay = (1001, 1100), "/shots/v001/shot.$F4.exr", True
+
+    def stash(self):
+        return FakeOptions(is_warmup=True)
+
+    def frameRange(self, value=None):
+        if value is None:
+            return self.range
+        self.range = value
+
+    def output(self, value=None):
+        if value is None:
+            return self.out
+        self.out = value
+
+    def outputToMPlay(self, value):
+        self.mplay = value
 
 
 def test_auto_uses_viewport_when_resolution_fits():
@@ -91,7 +117,7 @@ def test_auto_tears_off_when_resolution_is_bigger():
     torn = FakeViewer((3840, 2160))
     viewer = FakeViewer((2560, 1400), tear_off_result=torn)
     assert flipbook.chooseRecorder(viewer, (3840, 2160), "auto") is torn
-    assert viewer.events == [("maximize", True), ("maximize", False)]
+    assert viewer.events == [("maximize", True), ("settle",), ("maximize", False)]
 
 
 def test_off_never_tears_off():
@@ -107,8 +133,9 @@ def test_tear_off_failure_falls_back_to_viewport():
 def test_record_in_torn_off_copy_leaves_main_viewer_untouched():
     torn = FakeViewer((3840, 2160))
     viewer = FakeViewer((1920, 1000), tear_off_result=torn)
-    flipbook.record(viewer, None, (3840, 2160), mode="always", black_background=True, hide_background_image=True)
-    assert torn.events == [("scheme", "dark"), ("bgimage", False), ("flipbook",),
+    flipbook.record(viewer, FakeOptions(), (3840, 2160), mode="always", black_background=True,
+                    hide_background_image=True)
+    assert torn.events == [("scheme", "dark"), ("bgimage", False), ("warmup",), ("flipbook",),
                            ("scheme", "grey"), ("bgimage", True), ("close",)]
     assert ("scheme", "dark") not in viewer.events
 
@@ -121,7 +148,7 @@ def test_record_restores_state_when_flipbook_fails():
     torn = Failing((3840, 2160))
     viewer = FakeViewer((1920, 1000), tear_off_result=torn)
     with pytest.raises(RuntimeError):
-        flipbook.record(viewer, None, (3840, 2160), mode="always", black_background=True)
+        flipbook.record(viewer, FakeOptions(), (3840, 2160), mode="always", black_background=True)
     assert torn.events[-2:] == [("scheme", "grey"), ("close",)]
     assert viewer.events[-1] == ("maximize", False)
 
@@ -207,3 +234,35 @@ def test_tear_off_hides_bars_copies_camera_and_sizes_window(monkeypatch, hou):
     assert ("setContainsPlaybar", (False,)) in panel.calls
     torn.close()
     assert panel.closed
+
+
+def test_warm_up_renders_one_frame_to_temp_not_to_mplay():
+    seen = []
+
+    class Recorder(FakeViewer):
+        def startFlipbook(self, options):
+            seen.append((options.frameRange(), options.output(), options.mplay))
+
+    options = FakeOptions()
+    flipbook.warmUp(Recorder((1, 1)), options)
+    (frames, output, mplay), = seen
+    assert frames == (1001, 1001) and mplay is False
+    assert "dinowrite_warmup_" in output and output.endswith("warmup.$F4.jpg")
+    assert options.out == "/shots/v001/shot.$F4.exr", "real flipbook settings untouched"
+
+
+def test_warm_up_failure_does_not_block_recording():
+    class Broken(FakeViewer):
+        def startFlipbook(self, options):
+            raise RuntimeError("no GL")
+
+    flipbook.warmUp(Broken((1, 1)), FakeOptions())  # only logs
+
+
+def test_settle_waits_for_stable_size(monkeypatch):
+    sizes = iter([(800, 600), (1600, 900), (3840, 2160), (3840, 2160), (3840, 2160), (3840, 2160)])
+    viewer = viewport_mod.HouViewport.__new__(viewport_mod.HouViewport)
+    viewer.viewport_panetab = type("T", (), {"curViewport": lambda self: type("V", (), {"draw": lambda s: None})()})()
+    monkeypatch.setattr(viewer, "viewportSize", lambda: next(sizes))
+    monkeypatch.setattr(viewport_mod.time, "sleep", lambda s: None)
+    assert viewer.settle() == (3840, 2160)
