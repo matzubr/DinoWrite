@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from re import search
 
@@ -5,7 +6,7 @@ import hou
 import webbrowser as wb
 
 from . import config
-from .core import ffmpeg, helpers
+from .core import ffmpeg, helpers, ocio
 from .core.log import hmsg, log
 from .core.viewport import HouViewport
 
@@ -14,7 +15,6 @@ def start(data,kwargs):
     settingsfile = config.load()
     paths = settingsfile["paths"]
     advanced = settingsfile["advanced"]
-    ffmpeg_cmd = settingsfile["ffmpeg_cmd"]
 
     # Parsing settings
     fb_name =      paths.get("fb_name")
@@ -27,7 +27,6 @@ def start(data,kwargs):
         return 0
     else:
         frame_padding = frame_padding[0]
-        frame_padding_int = frame_padding.replace("$F","").zfill(2)
 
     # Parsing data
     file_name = data.get("name")
@@ -129,23 +128,100 @@ def start(data,kwargs):
             log.warning(f"Incomplete flipbook deleted ({len(files)} of {fb_length} frames):\n{sequence_folder.as_posix()}")
 
     if data.get("convertvideo") and files_keeped:
-        fps = helpers.ffmpegFps(hou.fps())
-        aspect = float(data.get("aspect") or 1)
-        resolution = f"{file_resolution[0]}x{file_resolution[1]}"
-        start_frame = int(frame_start)
+        convert(settingsfile, viewport,
+                sequence=output_filepath,
+                frame_padding=frame_padding,
+                frame_range=(frame_start, frame_end),
+                resolution=file_resolution,
+                pixel_aspect=float(data.get("aspect") or 1),
+                video_ext=fb_video_ext)
 
-        converter = ffmpeg.FFmpeg(cmd=ffmpeg_cmd,
-                            binary=advanced.get("ffmpeg_path", ""))
 
-        input_files = output_filepath.as_posix().replace(frame_padding, f"%{frame_padding_int}d")
-        output_video = (output_filepath.parent /
-                        filename).as_posix().replace(f"{frame_padding}.{file_format}", fb_video_ext)
+COLOR_TRANSFORMS = ("ocio", "srgb", "gamma22", "bt709", "none")
 
-        converter.convert_to_video(fps=fps,
-                                resolution=resolution,
-                                aspect=file_resolution[0]/file_resolution[1]*aspect,
-                                start_frame=start_frame,
-                                input=input_files,
-                                output=output_video,
-                                delete_input=advanced['conversion_delete_input_sequence'],
-                                exr_transfer=advanced.get("exr_transfer", "srgb") if file_format == "exr" else "")
+
+def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_range: tuple,
+            resolution: tuple, pixel_aspect: float, video_ext: str) -> bool:
+    """Convert written flipbook sequence to video.
+
+    Color (advanced.color_transform):
+        ocio    - OCIO display/view of the viewer via hoiiotool (falls back to srgb if it isn't available/fails)
+        srgb, gamma22, bt709 - fixed transfer function for linear EXR
+        none    - pass pixel values as is (for display-encoded sequences)
+
+    Args:
+        sequence (Path): flipbook output path with frame token, like .../name.v001.$F4.exr
+        frame_padding (str): frame token in the file name, like "$F4"
+    """
+    advanced = settings["advanced"]
+    padding = int(frame_padding.replace("$F", "") or 1)
+    is_exr = sequence.suffix.lower() == ".exr"
+    color_transform = advanced.get("color_transform", "ocio") if is_exr else "none"
+    if color_transform not in COLOR_TRANSFORMS:
+        log.warning("Unknown color_transform '%s', expected one of: %s. Using srgb",
+                    color_transform, ", ".join(COLOR_TRANSFORMS))
+        color_transform = "srgb"
+
+    converter = ffmpeg.FFmpeg(cmd=settings["ffmpeg_cmd"], binary=advanced.get("ffmpeg_path", ""))
+    if not converter.available:
+        return False
+
+    ffmpeg_input = sequence
+    temp_folder = None
+    if color_transform == "ocio":
+        temp_folder = sequence.parent / "_ocio_tmp"
+        display_sequence = temp_folder / (sequence.stem + ".png")
+        if ocioTransform(advanced, viewport, sequence, display_sequence, frame_padding, frame_range, padding):
+            ffmpeg_input = display_sequence
+            color_transform = "none"  # already display-encoded
+        else:
+            log.warning("OCIO transform unavailable, falling back to srgb transfer")
+            color_transform = "srgb"
+
+    # name.v001.$F4.exr -> name.v001.mov (works for name_$F4.exr too)
+    output_video = sequence.parent / (sequence.name.partition(frame_padding)[0].rstrip("._-") + f".{video_ext}")
+    success = converter.convert_to_video(
+        fps=helpers.ffmpegFps(hou.fps()),
+        resolution=f"{resolution[0]}x{resolution[1]}",
+        aspect=resolution[0] / resolution[1] * pixel_aspect,
+        start_frame=int(frame_range[0]),
+        input=ffmpeg_input.as_posix().replace(frame_padding, f"%0{padding}d"),
+        output=output_video.as_posix(),
+        exr_transfer="" if color_transform == "none" else color_transform)
+
+    if temp_folder is not None and temp_folder.exists():
+        shutil.rmtree(temp_folder, ignore_errors=True)
+
+    if success and advanced.get("conversion_delete_input_sequence"):
+        for frame in sequenceFiles(sequence, frame_padding):
+            frame.unlink()
+    return success
+
+
+def ocioTransform(advanced: dict, viewport, sequence: Path, display_sequence: Path,
+                  frame_padding: str, frame_range: tuple, padding: int) -> bool:
+    tool = ocio.findOiiotool(advanced.get("oiiotool_path", ""))
+    if not tool:
+        log.warning("hoiiotool/oiiotool not found")
+        return False
+    display, view = ocio.displayView(viewport.getPaneTab(),
+                                     advanced.get("ocio_display", ""), advanced.get("ocio_view", ""))
+    if not display or not view:
+        log.warning("Can't resolve OCIO display/view")
+        return False
+    return ocio.applyDisplayTransform(
+        tool, ocio.configPath(),
+        input_pattern=sequence.as_posix().replace(frame_padding, "#"),
+        output_pattern=display_sequence.as_posix().replace(frame_padding, "#"),
+        frame_range=frame_range, padding=padding, display=display, view=view,
+        input_space=advanced.get("ocio_input_space", ocio.DEFAULT_INPUT_SPACE))
+
+
+def sequenceFiles(sequence: Path, frame_padding: str) -> list:
+    """Frames of this sequence only (not the video or other files in the folder)"""
+    prefix, _, suffix = sequence.name.partition(frame_padding)
+    if not sequence.parent.exists():
+        return []
+    return [f for f in sequence.parent.iterdir()
+            if f.is_file() and f.name.startswith(prefix) and f.name.endswith(suffix)
+            and f.name[len(prefix):len(f.name) - len(suffix)].isdigit()]

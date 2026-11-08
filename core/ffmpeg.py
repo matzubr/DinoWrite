@@ -114,19 +114,14 @@ class FFmpeg:
 
         return commands
 
-    def convert_to_video(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", delete_input=False, exr_transfer=""):
+    def convert_to_video(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", exr_transfer="") -> bool:
+        """Encode image sequence to video. Returns True on success (caller decides about deleting inputs)."""
         if not self.available:
             log.warning("ffmpeg is not available, video conversion skipped")
-            return 0
+            return False
 
         ffmpeg_cmd = self.cmd(fps=fps, resolution=resolution, aspect=aspect, exr_transfer=exr_transfer,
                             start_frame=start_frame, input=input, output=output)
-        
-        folder = Path(input).parent
-        if folder.exists():
-            files = [x for x in folder.iterdir()]
-        else:
-            files = []
 
         log.info("Running: %s", subprocess.list2cmdline(ffmpeg_cmd))
         try:
@@ -134,11 +129,9 @@ class FFmpeg:
         except subprocess.CalledProcessError as e:
             stderr_tail = "\n".join((e.stderr or "").strip().splitlines()[-15:])
             log.error("ffmpeg failed with exit code %s:\n%s", e.returncode, stderr_tail)
-            return 0
+            return False
         except FileNotFoundError as e:
             log.error("ffmpeg executable not found: %s", e)
-            return 0
-
-        if len(files) != 0 and delete_input:
-            for file in files:
-                file.unlink()
+            return False
+        log.info("Video written: %s", output)
+        return True

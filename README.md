@@ -39,8 +39,12 @@ that differ from defaults, so updating the tool doesn't wipe them.
 - By default, after converting sequence to video, script delete sequence files (which can also be disabled in `settings.json`)  
 - By default, sequences are written in native pixel aspect, but Houdini flipbooks cannot handle that with the original resolution. It can be fixed in Nuke via the reformat node. But ffmpeg conversion handles pixel aspect and gives you the correct image (which can also be modified in `settings.json`)
 
-- Video conversion treats EXR flipbooks as linear and encodes them to sRGB (`advanced.exr_transfer` in `settings.json`: `srgb`, `gamma22`, `bt709`, or `""` to skip). If the video looks washed out compared to the viewport, your EXRs are already display-encoded: set it to `""`
+- Video colors (`advanced.color_transform` in settings):
+  - `ocio` (default): the same OCIO display/view as the Scene Viewer, applied with `hoiiotool` that ships with Houdini (`$HFS/bin/hoiiotool`). Display/view can be fixed with `ocio_display` / `ocio_view`, EXR color space with `ocio_input_space` (default `scene_linear` role). Falls back to `srgb` if hoiiotool is missing or fails
+  - `srgb`, `gamma22`, `bt709`: fixed transfer for linear EXR
+  - `none`: pass pixels as is. Use it if your EXRs are already display-encoded (video looks washed out)
 - ffmpeg is taken from `advanced.ffmpeg_path`, then `$PDG_FFMPEG`, then the one that ships with Houdini (`$HFS/bin/hffmpeg`), then system PATH
+- After a successful conversion only frames of the converted sequence are deleted (`conversion_delete_input_sequence`), other files in the folder are kept
 
 ## Installation 
 ---
@@ -82,8 +86,9 @@ Project layout:
 |---|---|
 | `__init__.py` | `show()` entry point, dev `reload_modules()` |
 | `main.py` | main window |
+| `config.py` | settings: defaults + user overrides |
 | `flipbook.py` | recording + conversion pipeline |
-| `core/` | Houdini logic without Qt: viewport, ffmpeg, helpers, logging |
+| `core/` | Houdini logic without Qt: viewport, ffmpeg, OCIO (hoiiotool), helpers, logging |
 | `gui/` | Qt: PySide6/PySide2 compat (`qt.py`), widgets, styles, icons |
 | `settings.json` | default settings |
 

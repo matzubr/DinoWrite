@@ -18,6 +18,7 @@ _SUBMODULES = (
     "core.helpers",
     "core.ffmpeg",
     "core.viewport",
+    "core.ocio",
     "config",
     "gui.qt",
     "gui.resources",

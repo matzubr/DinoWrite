@@ -44,7 +44,11 @@
     ],
     "advanced":{
         "ffmpeg_path": "",
-        "exr_transfer": "srgb",
+        "color_transform": "ocio",
+        "ocio_display": "",
+        "ocio_view": "",
+        "ocio_input_space": "scene_linear",
+        "oiiotool_path": "",
         "delete_incomplete_fb":false,
         "conversion_delete_input_sequence":true,
         "aspect_affects_resolution":false,
