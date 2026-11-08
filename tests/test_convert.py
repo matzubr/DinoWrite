@@ -146,7 +146,7 @@ def test_cancel_during_ocio_keeps_sequence_and_skips_encode(settings, sequence, 
 def test_status_and_progress(settings, sequence, tools):
     job = _job(settings, sequence)
     job.start()
-    assert job.status.startswith("OCIO ACES SDR: 0%")
+    assert job.status.startswith("OCIO ACES SDR: 0/10 frames · ")  # process count depends on CPU cores
     job.step()
     assert job.stage == conversion.ENCODE and job.status.startswith("Encoding h264_mf")
     job.step()

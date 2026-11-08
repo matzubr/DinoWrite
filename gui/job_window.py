@@ -43,8 +43,9 @@ class JobWindow(RoundedWindow, QWidget):
         self.on_finished = on_finished
         self._notified = False
 
-        # Tool window: stays above Houdini, doesn't steal focus from the viewport
-        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+        # Tool window that doesn't steal focus. Stays on top: MPlay opens after the flipbook as a separate
+        # application window over Houdini and would hide the progress otherwise
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -102,8 +103,19 @@ class JobWindow(RoundedWindow, QWidget):
         finished = self.job.step()
         self.status.setText(self.job.status)
         self.bar.setValue(int(self.job.progress * 1000))
+        self._statusBar(finished)
         if finished:
             self._finished()
+
+    def _statusBar(self, finished: bool):
+        """Same progress in Houdini's status bar, visible even when the window is behind something"""
+        try:
+            severity = hou.severityType.Message
+            if finished and not self.job.succeeded:
+                severity = hou.severityType.Warning
+            hou.ui.setStatusMessage(f"DinoWrite {self.job.video.name}: {self.job.status}", severity=severity)
+        except Exception:  # status bar is a nicety, never break the job over it
+            pass
 
     def _finished(self):
         self.timer.stop()

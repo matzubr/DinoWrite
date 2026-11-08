@@ -81,3 +81,17 @@ def test_windows_stack_above_each_other(make_window):
     first = make_window(FakeJob())
     second = make_window(FakeJob())
     assert second.y() < first.y()
+
+
+def test_progress_window_stays_on_top_and_reports_to_status_bar(make_window, hou, monkeypatch):
+    from types import SimpleNamespace
+
+    from DinoWrite.gui.qt import Qt
+
+    messages = []
+    monkeypatch.setattr(hou, "ui", SimpleNamespace(setStatusMessage=lambda text, severity=None: messages.append(text)),
+                        raising=False)
+    window = make_window(FakeJob())
+    assert window.windowFlags() & Qt.WindowStaysOnTopHint
+    window.tick()
+    assert messages == ["DinoWrite shot.v001.mov: Encoding 33%"]

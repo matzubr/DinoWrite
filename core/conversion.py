@@ -128,12 +128,15 @@ class ConversionJob:
     def succeeded(self) -> bool:
         return self.stage == DONE
 
+    def ocioFramesDone(self) -> int:
+        """Frames already written by all hoiiotool processes together"""
+        return len(list(self.temp_folder.iterdir())) if self.temp_folder.exists() else 0
+
     @property
     def progress(self) -> float:
         """Progress of the current stage 0..1"""
         if self.stage == OCIO:
-            written = len(list(self.temp_folder.iterdir())) if self.temp_folder.exists() else 0
-            return min(written / max(self.total_frames, 1), 1.0)
+            return min(self.ocioFramesDone() / max(self.total_frames, 1), 1.0)
         if self.stage == ENCODE and self._progress_dir:
             value = ffmpeg.progressFromFile(Path(self._progress_dir.name) / "progress.txt", self.total_frames)
             return min(value or 0.0, 1.0)
@@ -144,7 +147,8 @@ class ConversionJob:
         """Human readable current state"""
         percent = f"{self.progress * 100:.0f}%"
         if self.stage == OCIO:
-            return f"OCIO {self.view}: {percent} ({len(self.ocio_commands)} processes)"
+            return (f"OCIO {self.view}: {self.ocioFramesDone()}/{self.total_frames} frames "
+                    f"· {len(self.ocio_commands)} processes")
         if self.stage == ENCODE:
             return f"Encoding {self.codec or 'video'}: {percent}"
         if self.stage == DONE:
