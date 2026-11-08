@@ -6,12 +6,26 @@ import pytest
 from DinoWrite.core.viewport import HouViewport
 
 
+FALLBACKS = {"resolution": (2048, 1080), "pixelAspectRatio": 1.0}  # USD schema fallbacks
+
+
 class Attr:
-    def __init__(self, value):
-        self.value = value
+    def __init__(self, name, value):
+        self.name, self.value = name, value
 
     def Get(self):
-        return self.value
+        return self.value if self.value is not None else FALLBACKS.get(self.name)
+
+    def HasAuthoredValue(self):
+        return self.value is not None
+
+
+class Relationship:
+    def __init__(self, targets):
+        self.targets = targets
+
+    def GetTargets(self):
+        return list(self.targets)
 
 
 class Prim:
@@ -28,12 +42,19 @@ class Prim:
         return True
 
     def GetAttribute(self, name):
-        return Attr(self.attrs.get(name))
+        return Attr(name, self.attrs.get(name))
+
+    def GetRelationship(self, name):
+        return Relationship(self.attrs.get(name, ()))
 
 
 class Stage:
-    def __init__(self, prims):
+    def __init__(self, prims, metadata=None):
         self.prims = prims
+        self.metadata = metadata or {}
+
+    def GetMetadata(self, key):
+        return self.metadata.get(key, "")
 
     def Traverse(self):
         return iter(self.prims)
@@ -42,10 +63,10 @@ class Stage:
         return next((p for p in self.prims if p.GetPath() == path), None)
 
 
-def viewer(network="Lop", prims=(), camera_path="/cam", obj_camera=None, size=(0, 0, 1295, 1096)):
+def viewer(network="Lop", prims=(), camera_path="/cam", obj_camera=None, size=(0, 0, 1295, 1096), metadata=None):
     pane = SimpleNamespace(
         pwd=lambda: SimpleNamespace(childTypeCategory=lambda: SimpleNamespace(name=lambda: network)),
-        stage=lambda: Stage(list(prims)),
+        stage=lambda: Stage(list(prims), metadata),
         curViewport=lambda: SimpleNamespace(size=lambda: size, cameraPath=lambda: camera_path,
                                             camera=lambda: obj_camera))
     view = HouViewport.__new__(HouViewport)
@@ -70,6 +91,21 @@ def test_lop_render_settings_resolution_wins():
     assert view.cameraResolution() == (1920, 800)
     assert view.cameraPixelAspect() == 2.0
     assert view.cameraAspect() == pytest.approx(1920 / 800)
+
+
+def test_lop_uses_the_stage_render_settings_not_a_fallback_resolution():
+    """Karma Render Settings 1280x720 is the stage's render settings; another prim without an authored
+    resolution reports the USD fallback 2048x1080 and must not be used"""
+    other = Prim("RenderSettings", "/Render/aaa_default")  # no authored resolution
+    karma = Prim("RenderSettings", "/Render/rendersettings", resolution=(1280, 720), camera=("/cam",))
+    view = viewer(prims=[other, karma, CAMERA_16_9], metadata={"renderSettingsPrimPath": "/Render/rendersettings"})
+    assert view.cameraResolution() == (1280, 720)
+    # no stage metadata: the one with the viewport camera
+    view = viewer(prims=[other, karma, CAMERA_16_9])
+    assert view.cameraResolution() == (1280, 720)
+    # only an unauthored one: camera aspect, not 2048x1080
+    view = viewer(prims=[other, CAMERA_16_9])
+    assert view.cameraResolution() == (1295, 728)
 
 
 def test_lop_without_camera_uses_viewport():

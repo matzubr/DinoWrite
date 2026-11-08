@@ -270,17 +270,37 @@ class HouViewport:
         return self.viewport_panetab.pwd().childTypeCategory().name() == "Lop"
 
     def _renderSettingsPrim(self):
+        """Render settings the viewer uses: the stage's renderSettingsPrimPath (set by Karma Render Settings),
+        else one whose camera is the viewport camera, else the only one. None when it isn't clear."""
         stage = self.viewport_panetab.stage()
-        render_prims = [p for p in stage.Traverse() if p.GetTypeName() == "RenderSettings"] if stage else []
+        if not stage:
+            return None
+        path = stage.GetMetadata("renderSettingsPrimPath")
+        prim = stage.GetPrimAtPath(path) if path else None
+        if prim and prim.IsValid():
+            return prim
+        render_prims = [p for p in stage.Traverse() if p.GetTypeName() == "RenderSettings"]
+        camera_path = self.viewport_panetab.curViewport().cameraPath()
+        for prim in render_prims:
+            relationship = prim.GetRelationship("camera")
+            targets = [str(t) for t in relationship.GetTargets()] if relationship else []
+            if camera_path and camera_path in targets:
+                return prim
         if len(render_prims) > 1:
-            log.warning("Multiple render settings prims, using the first one: %s", render_prims[0].GetPath())
+            log.warning("Several render settings prims and none is the stage's or uses the viewport camera, "
+                        "using the camera aspect")
+            return None
         return render_prims[0] if render_prims else None
 
     def _renderSettingsResolution(self):
         prim = self._renderSettingsPrim()
         attribute = prim.GetAttribute("resolution") if prim else None
-        resolution = attribute.Get() if attribute else None
-        return (int(resolution[0]), int(resolution[1])) if resolution else None
+        # Only an authored value: the schema fallback is 2048x1080, not what the viewer shows
+        if not attribute or not attribute.HasAuthoredValue():
+            return None
+        resolution = attribute.Get()
+        log.info("Camera resolution from %s: %sx%s", prim.GetPath(), resolution[0], resolution[1])
+        return (int(resolution[0]), int(resolution[1]))
 
     def _usdCameraAspect(self):
         """Image aspect of the viewport's USD camera (horizontalAperture / verticalAperture), None without one"""
@@ -316,7 +336,7 @@ class HouViewport:
         if self._isLop():
             prim = self._renderSettingsPrim()
             attribute = prim.GetAttribute("pixelAspectRatio") if prim else None
-            aspect = attribute.Get() if attribute else None
+            aspect = attribute.Get() if attribute and attribute.HasAuthoredValue() else None
             return float(aspect) if aspect else 1.0
         camera = self.viewport_panetab.curViewport().camera()
         return camera.evalParm("aspect") if camera else 1.0
