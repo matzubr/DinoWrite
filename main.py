@@ -14,7 +14,7 @@ if BRANCH=="main":
     WINDOW_TITLE = TITLE
 
 WINDOW_WIDTH = 430
-WINDOW_HIGHT = 490
+WINDOW_HIGHT = 508
 WINDOW_OBJECT_NAME = "DinoWriterWindow"
 WIDTH_OFFSET = 20
 HIGHT_OFFSET = 90
@@ -144,8 +144,9 @@ class DinoWriter(RoundedWindow, QWidget):
 
         self.cameraname = widgets.Label("Camera: {camera}".format(camera=self.hou_viewport.cameraName()))
         self.ramusage =   widgets.Label("RAM Usage: {ramusage}")
-        self.statusline = widgets.Label("")
-        self.statusline.setTextFormat(Qt.RichText)
+        # Elided labels: long OCIO names must not widen the fixed size window
+        self.statusline = widgets.ElidedLabel("")
+        self.videoline = widgets.ElidedLabel("")
         self.seqname = widgets.ColorfulLabel()
         dino_paint = widgets.HIcon(Icons.get("label_dino_paint.svg",type="Path"),size=50)
         
@@ -161,6 +162,7 @@ class DinoWriter(RoundedWindow, QWidget):
         info_layout.addWidget(self.cameraname)
         info_layout.addWidget(self.ramusage)
         info_layout.addWidget(self.statusline)
+        info_layout.addWidget(self.videoline)
         info_layout.addLayout(sequence_layout)
 
         ## MAIN SETTINGS
@@ -361,15 +363,12 @@ class DinoWriter(RoundedWindow, QWidget):
                                     (f"QLineEdit {{border: 1px solid {COLORS_PALLETE['red']};}}" if problem else ""))
         self.writebutton.setEnabled(not problem)
         self.writebutton.setToolTip(problem)
-        if problem:
-            self.statusline.setText(f"<font color='{COLORS_PALLETE['crimson']}'>{problem}</font>")
-            return
+        status_color = COLORS_PALLETE["crimson"] if problem else "#ffffff"
+        self.statusline.setStyleSheet(f"background-color: transparent; color: {status_color};")
+        self.statusline.setText(problem or self.recordStatus())
 
-        self.statusline.setToolTip("")
-        parts = [self.recordStatus()]
-        if self.convertvideo.isChecked():
-            parts.append(f"Video: {self.videoStatus()}")
-        self.statusline.setText(" &nbsp;&middot;&nbsp; ".join(parts))
+        self.videoline.setExtraToolTip("")
+        self.videoline.setText(f"Video: {self.videoStatus()}" if self.convertvideo.isChecked() else "Video: off")
 
     def recordStatus(self) -> str:
         resx, resy = helpers.toInt(self.resx.text()), helpers.toInt(self.resy.text())
@@ -378,7 +377,7 @@ class DinoWriter(RoundedWindow, QWidget):
         mode = self.settings["advanced"].get("true_resolution", "auto")
         separate = mode == "always" or (mode == "auto" and not self.fitsMaximizedViewport((resx, resy)))
         where = "separate viewer" if separate else "viewport"
-        return f"Record: {resx}&times;{resy} in {where}"
+        return f"Record: {resx}×{resy} in {where}"
 
     def fitsMaximizedViewport(self, resolution) -> bool:
         """Estimate: maximized viewport is about the size of the screen with the viewer (in device pixels)"""
@@ -407,7 +406,7 @@ class DinoWriter(RoundedWindow, QWidget):
         if not isinstance(display, str) or not isinstance(view, str) or not display:
             return "OCIO"
         # full names are long ("sRGB - Display / ACES 1.0 - SDR Video"): view in the line, both in the tooltip
-        self.statusline.setToolTip(f"OCIO display: {display}\nOCIO view: {view}")
+        self.videoline.setExtraToolTip(f"OCIO display: {display}\nOCIO view: {view}")
         return f"OCIO {view}"
 
     def updateFileFormat(self):

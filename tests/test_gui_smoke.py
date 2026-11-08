@@ -66,16 +66,17 @@ def test_status_line_shows_record_and_video(houdini, hou, monkeypatch):
     window.resy.setText("10000")
     window.convertvideo.setChecked(True)
     window.updateStatus()
-    text = window.statusline.text()
-    assert "20000&times;10000 in separate viewer" in text
+    text = window.statusline.text() + " " + window.videoline.text()
+    assert "20000×10000 in separate viewer" in text
     assert "Video: OCIO Un-tone-mapped" in text
-    assert "sRGB - Display" in window.statusline.toolTip()
+    assert "sRGB - Display" in window.videoline.toolTip()
 
     window.resx.setText("640")
     window.resy.setText("480")
     window.convertvideo.setChecked(False)
     window.updateStatus()
-    assert window.statusline.text() == "Record: 640&times;480 in viewport"
+    assert window.statusline.text() == "Record: 640×480 in viewport"
+    assert window.videoline.text() == "Video: off"
     window.close()
 
 
@@ -89,4 +90,36 @@ def test_window_has_smooth_transparent_corners(houdini):
     # antialiased edge: some partially transparent pixels along the corner arc
     arc = [image.pixelColor(x, 2).alpha() for x in range(0, 15)]
     assert any(0 < a < 255 for a in arc)
+    window.close()
+
+
+def test_long_video_status_does_not_widen_window(houdini, hou, monkeypatch):
+    """Long OCIO view name: text is elided, window/layout keep their size, dino doesn't move"""
+    from types import SimpleNamespace
+
+    import DinoWrite
+
+    long_view = "ACES 1.0 - SDR Video (Rec.1886 Rec.709 - Display, really long view name)"
+    monkeypatch.setattr(hou, "Color", SimpleNamespace(ocio_defaultDisplay=lambda: "Rec.1886 Rec.709 - Display",
+                                                      ocio_defaultView=lambda: long_view), raising=False)
+    window = DinoWrite.show({})
+    monkeypatch.setattr(window.hou_viewport, "getPaneTab",
+                        lambda: SimpleNamespace(usingOCIO=lambda: False, qtScreenGeometry=lambda: 1 / 0))
+    window.convertvideo.setChecked(False)
+    window.updateStatus()
+    window.layout().activate()
+    dino_before = window.seqname.parentWidget().mapTo(window, window.seqname.geometry().topRight())
+    width_before = window.videoline.width()
+
+    window.convertvideo.setChecked(True)
+    window.updateStatus()
+    window.layout().activate()
+
+    assert window.width() == window.minimumWidth()
+    assert window.videoline.width() == width_before
+    assert window.seqname.parentWidget().mapTo(window, window.seqname.geometry().topRight()) == dino_before
+    assert window.videoline.text() == f"Video: OCIO {long_view}"
+    assert window.videoline.toolTip().startswith("Video: OCIO")  # full text in tooltip when elided
+    for label in (window.statusline, window.videoline):
+        assert label.geometry().right() <= window.width()
     window.close()

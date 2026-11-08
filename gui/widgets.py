@@ -104,6 +104,41 @@ class ColorfulLabel(Label):
 
         self.setText(string_to_set)
 
+class ElidedLabel(Label):
+    """One line label that never widens its layout: text that doesn't fit ends with '…',
+    the full text is shown in the tooltip. (A long QLabel sets its minimum width to the text
+    width, which pushes everything in a fixed size window out of the window.)"""
+    def __init__(self, label:str="", **kwargs) -> QLabel:
+        self._full_text = ""
+        self._extra_tooltip = ""
+        super().__init__(**kwargs)  # calls setText()
+        self.setTextFormat(Qt.PlainText)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.setMinimumWidth(1)
+        self.setText(label)
+
+    def setText(self, text: str):
+        self._full_text = text
+        self._elide()
+
+    def text(self) -> str:
+        return self._full_text
+
+    def setExtraToolTip(self, tooltip: str):
+        """Tooltip shown in addition to the full text (when it's elided)"""
+        self._extra_tooltip = tooltip
+        self._elide()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._elide()
+
+    def _elide(self):
+        shown = self.fontMetrics().elidedText(self._full_text, Qt.ElideRight, max(self.width(), 1))
+        super().setText(shown)
+        tooltip = self._full_text if shown != self._full_text else ""
+        self.setToolTip("\n\n".join(t for t in (tooltip, self._extra_tooltip) if t))
+
 class LineEdit(QLineEdit):
     """
     Simple LineEdit with func of making bold like Houdini
