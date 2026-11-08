@@ -3,11 +3,11 @@
 Linear EXR flipbook -> OCIO display/view (same as the viewer shows) -> 16-bit PNG sequence -> ffmpeg.
 """
 import shutil
-import subprocess
 from pathlib import Path
 
 import hou
 
+from . import process
 from .log import log
 
 # Color space of flipbook EXRs. scene_linear is an OCIO role, resolved by the active config
@@ -93,20 +93,13 @@ def displayCommand(tool: str, config: str, input_pattern: str, output_pattern: s
 
 def applyDisplayTransform(tool: str, config: str, input_pattern: str, output_pattern: str,
                           frame_range: tuple, padding: int, display: str, view: str,
-                          input_space: str = DEFAULT_INPUT_SPACE) -> bool:
-    """Run oiiotool display transform. Returns True on success."""
+                          input_space: str = DEFAULT_INPUT_SPACE) -> process.Result:
+    """Run oiiotool display transform with Houdini progress/cancel. Result is truthy on success."""
     cmd = displayCommand(tool, config, input_pattern, output_pattern, frame_range, padding,
                          display, view, input_space)
-    Path(output_pattern).parent.mkdir(parents=True, exist_ok=True)
-    log.info("OCIO display transform '%s' / '%s', running: %s", display, view, subprocess.list2cmdline(cmd))
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
-    except subprocess.CalledProcessError as e:
-        output = (e.stderr or "") + (e.stdout or "")
-        tail = "\n".join(output.strip().splitlines()[-15:])
-        log.error("oiiotool failed with exit code %s:\n%s", e.returncode, tail)
-        return False
-    except FileNotFoundError as e:
-        log.error("oiiotool executable not found: %s", e)
-        return False
-    return True
+    output_folder = Path(output_pattern).parent
+    output_folder.mkdir(parents=True, exist_ok=True)
+    total = int(frame_range[1]) - int(frame_range[0]) + 1
+    log.info("OCIO display transform '%s' / '%s'", display, view)
+    return process.run(cmd, "DinoWrite: OCIO display transform",
+                       progress=lambda: len(list(output_folder.iterdir())) / max(total, 1))

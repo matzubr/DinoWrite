@@ -31,6 +31,7 @@ def _hscript_expression(value):
 def _make_hou():
     hou = types.ModuleType("hou")
     hou.Error = HouError
+    hou.OperationInterrupted = type("OperationInterrupted", (Exception,), {})
     hou.hscriptExpression = _hscript_expression
     hou.getenv = lambda name, default=None: default
     hou.text = types.SimpleNamespace(expandString=lambda s: s)

@@ -1,12 +1,13 @@
 """ffmpeg lookup, command building and video conversion"""
 import shutil
 import string
-import subprocess
+import tempfile
 from os import environ as osenviron
 from pathlib import Path
 
 import hou
 
+from . import process
 from .log import hmsg, log
 
 def findFFmpeg(custom_path: str = "") -> str:
@@ -114,24 +115,40 @@ class FFmpeg:
 
         return commands
 
-    def convert_to_video(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", exr_transfer="") -> bool:
-        """Encode image sequence to video. Returns True on success (caller decides about deleting inputs)."""
+    def convert_to_video(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="",
+                         exr_transfer="", total_frames=0) -> process.Result:
+        """Encode image sequence to video with Houdini progress/cancel.
+
+        Returns:
+            process.Result: truthy on success (caller decides about deleting inputs)
+        """
         if not self.available:
             log.warning("ffmpeg is not available, video conversion skipped")
-            return False
+            return process.Result(error="ffmpeg not found")
 
         ffmpeg_cmd = self.cmd(fps=fps, resolution=resolution, aspect=aspect, exr_transfer=exr_transfer,
                             start_frame=start_frame, input=input, output=output)
 
-        log.info("Running: %s", subprocess.list2cmdline(ffmpeg_cmd))
-        try:
-            subprocess.run(ffmpeg_cmd, check=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
-        except subprocess.CalledProcessError as e:
-            stderr_tail = "\n".join((e.stderr or "").strip().splitlines()[-15:])
-            log.error("ffmpeg failed with exit code %s:\n%s", e.returncode, stderr_tail)
-            return False
-        except FileNotFoundError as e:
-            log.error("ffmpeg executable not found: %s", e)
-            return False
-        log.info("Video written: %s", output)
-        return True
+        with tempfile.TemporaryDirectory(prefix="dinowrite_") as temp:
+            progress_file = Path(temp) / "progress.txt"
+            # machine readable progress (frame=N lines) instead of the interactive stats line
+            ffmpeg_cmd[1:1] = ["-nostats", "-progress", progress_file.as_posix()]
+            result = process.run(ffmpeg_cmd, "DinoWrite: encoding video",
+                                 progress=lambda: progressFromFile(progress_file, total_frames))
+        if result:
+            log.info("Video written: %s", output)
+        return result
+
+
+def progressFromFile(progress_file: Path, total_frames: int):
+    """Last 'frame=N' from ffmpeg -progress output as 0..1, None if unknown"""
+    if not total_frames:
+        return None
+    try:
+        text = progress_file.read_text(errors="replace")
+    except OSError:
+        return None
+    frames = [line.split("=", 1)[1] for line in text.splitlines() if line.startswith("frame=")]
+    if not frames or not frames[-1].strip().isdigit():
+        return None
+    return int(frames[-1]) / total_frames

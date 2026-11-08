@@ -208,7 +208,12 @@ def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_
     if color_transform == "ocio":
         temp_folder = sequence.parent / "_ocio_tmp"
         display_sequence = temp_folder / (sequence.stem + ".png")
-        if ocioTransform(advanced, viewport, sequence, display_sequence, frame_padding, frame_range, padding):
+        result = ocioTransform(advanced, viewport, sequence, display_sequence, frame_padding, frame_range, padding)
+        if getattr(result, "cancelled", False):
+            shutil.rmtree(temp_folder, ignore_errors=True)
+            log.warning("Video conversion cancelled, image sequence is kept")
+            return False
+        if result:
             ffmpeg_input = display_sequence
             color_transform = "none"  # already display-encoded
         else:
@@ -217,35 +222,40 @@ def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_
 
     # name.v001.$F4.exr -> name.v001.mov (works for name_$F4.exr too)
     output_video = sequence.parent / (sequence.name.partition(frame_padding)[0].rstrip("._-") + f".{video_ext}")
-    success = converter.convert_to_video(
+    result = converter.convert_to_video(
         fps=helpers.ffmpegFps(hou.fps()),
         resolution=f"{resolution[0]}x{resolution[1]}",
         aspect=resolution[0] / resolution[1] * pixel_aspect,
         start_frame=int(frame_range[0]),
         input=ffmpeg_input.as_posix().replace(frame_padding, f"%0{padding}d"),
         output=output_video.as_posix(),
-        exr_transfer="" if color_transform == "none" else color_transform)
+        exr_transfer="" if color_transform == "none" else color_transform,
+        total_frames=int(frame_range[1]) - int(frame_range[0]) + 1)
 
     if temp_folder is not None and temp_folder.exists():
         shutil.rmtree(temp_folder, ignore_errors=True)
 
-    if success and advanced.get("conversion_delete_input_sequence"):
+    if getattr(result, "cancelled", False):
+        log.warning("Video conversion cancelled, image sequence is kept")
+        Path(output_video).unlink(missing_ok=True)  # partial video
+    if result and advanced.get("conversion_delete_input_sequence"):
         for frame in sequenceFiles(sequence, frame_padding):
             frame.unlink()
-    return success
+    return bool(result)
 
 
 def ocioTransform(advanced: dict, viewport, sequence: Path, display_sequence: Path,
-                  frame_padding: str, frame_range: tuple, padding: int) -> bool:
+                  frame_padding: str, frame_range: tuple, padding: int):
+    """Returns process.Result of hoiiotool, or None when OCIO isn't available"""
     tool = ocio.findOiiotool(advanced.get("oiiotool_path", ""))
     if not tool:
         log.warning("hoiiotool/oiiotool not found")
-        return False
+        return None
     display, view = ocio.displayView(viewport.getPaneTab(),
                                      advanced.get("ocio_display", ""), advanced.get("ocio_view", ""))
     if not display or not view:
         log.warning("Can't resolve OCIO display/view")
-        return False
+        return None
     return ocio.applyDisplayTransform(
         tool, ocio.configPath(),
         input_pattern=sequence.as_posix().replace(frame_padding, "#"),

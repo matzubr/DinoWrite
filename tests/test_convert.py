@@ -119,3 +119,14 @@ def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch):
                             "-f", "rawvideo", "-"], check=True, capture_output=True, stdin=subprocess.DEVNULL,
                            timeout=60).stdout
     assert all(abs(channel - 118) <= 2 for channel in pixel)
+
+
+def test_cancel_during_ocio_keeps_sequence_and_skips_encode(settings, sequence, fake_ffmpeg, monkeypatch):
+    from DinoWrite.core.process import Result
+
+    settings["advanced"]["conversion_delete_input_sequence"] = True
+    monkeypatch.setattr(flipbook, "ocioTransform", lambda *args: Result(cancelled=True))
+    assert not _convert(settings, sequence)
+    assert fake_ffmpeg.calls == []
+    assert len(list(sequence.parent.glob("*.exr"))) == 3
+    assert not (sequence.parent / "_ocio_tmp").exists()

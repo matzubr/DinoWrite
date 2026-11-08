@@ -16,6 +16,7 @@ __version__ = "1.2.5"
 _SUBMODULES = (
     "core.log",
     "core.helpers",
+    "core.process",
     "core.ffmpeg",
     "core.viewport",
     "core.ocio",
