@@ -34,10 +34,11 @@ def start(data,kwargs):
     file_format = data.get("fileformat")
     file_resolution = tuple((int(data.get("resx")), int(data.get("resy"))))
 
-    frame_start = int(data.get("framestart")) if not data.get(
-        "framestart").startswith("$") else hou.hscriptExpression(data.get("framestart"))
-    frame_end = int(data.get("frameend")) if not data.get("frameend").startswith(
-        "$") else hou.hscriptExpression(data.get("frameend"))
+    frame_start = utils.evalFrame(data.get("framestart"))
+    frame_end = utils.evalFrame(data.get("frameend"))
+    if frame_start is None or frame_end is None:
+        utils.hmsg(f"Can't evaluate frame range:\n{data.get('framestart')} - {data.get('frameend')}", level="error")
+        return 0
     frame_end = max(frame_start,frame_end)
 
     # Default path to write flipbook
@@ -46,15 +47,8 @@ def start(data,kwargs):
     if not write_folder.exists():
         write_folder.mkdir(parents=True, exist_ok=True)
 
-    # Get newer folder version of flipbook
-    write_folder_vers = [x.name for x in write_folder.iterdir() if x.is_dir()]
-    write_folder_vers = write_folder_vers if len(write_folder_vers) > 0 else ['v000']
-
-    # Get last version
-    last_ver_str = sorted(write_folder_vers, reverse=True)[0][1:]
-    ver_digit = int(last_ver_str)+1
-    ver_padding = len(last_ver_str)
-    ver_str = f"v{str(ver_digit).zfill(ver_padding)}"
+    # Get newer folder version of flipbook (only 'vNNN' folders, compared as numbers)
+    ver_str = utils.nextVersion(write_folder)
 
     # Set output filename
     filename = fb_name.format(
@@ -66,18 +60,6 @@ def start(data,kwargs):
 
     # Stash flipbook settings
     flipbook_options = viewport.flipbook_settings()
-
-    # Maximize window to get better quality
-    viewport.maximize_viewport()
-
-    # Change background color
-    if data.get("blackbg"):
-        prev_color_scheme = viewport.colorScheme()
-        viewport.colorScheme("dark")
-
-    # Disable background image preview
-    if data.get("bgimage"):
-        viewport.displayBackgroundImage(False)
 
     # Correcting resolution for mpeg4 codec
     if data.get("convertvideo"):
@@ -98,37 +80,57 @@ def start(data,kwargs):
     # flipbook_options.renderAllViewports(False)
     flipbook_options.antialias(hou.flipbookAntialias.HighQuality)
 
-    # Start Flipbook
-    viewport.startFlipbook(flipbook_options)
+    # Remember viewport state before changing it
+    prev_color_scheme = viewport.colorScheme() if data.get("blackbg") else None
 
-    # Return pane size
-    viewport.maximize_viewport(False)
+    try:
+        # Maximize window to get better quality
+        viewport.maximize_viewport()
+
+        # Change background color
+        if data.get("blackbg"):
+            viewport.colorScheme("dark")
+
+        # Disable background image preview
+        if data.get("bgimage"):
+            viewport.displayBackgroundImage(False)
+
+        # Start Flipbook
+        viewport.startFlipbook(flipbook_options)
+    finally:
+        # Always return viewport to its original state, even if flipbook failed
+        viewport.maximize_viewport(False)
+
+        if prev_color_scheme is not None:
+            viewport.colorScheme(prev_color_scheme)
+
+        if data.get("bgimage"):
+            viewport.displayBackgroundImage()
 
     # #Open dir
     if data.get("openfolder"):
         wb.open(write_folder.as_uri())
 
-    # Return color scheme
-    if data.get("blackbg"):
-        viewport.colorScheme(prev_color_scheme)
+    sequence_folder = output_filepath.parent
+    files_keeped = sequence_folder.exists()
+    if not files_keeped:
+        utils.logger(f"No frames were written to:\n{sequence_folder.as_posix()}")
 
-    # Return background image
-    if data.get("bgimage"):
-        viewport.displayBackgroundImage()
+    if files_keeped and advanced['delete_incomplete_fb']:
+        fb_length = int(frame_end - frame_start) + 1
+        files = [x for x in sequence_folder.iterdir() if x.is_file()]
+        tolerance = min(10, fb_length // 10) #extra padding up to 10 frames, smaller for short ranges
 
-    files_keeped=True
-    if advanced['delete_incomplete_fb']:
-        fb_length = frame_end - frame_start + 1
-        files = [x for x in output_filepath.parent.iterdir()]
-        
-        if len(files)<fb_length-10: #extra padding in 10 frames
+        if len(files) < fb_length - tolerance:
             [x.unlink() for x in files]
-            output_filepath.parent.rmdir()
+            if not any(sequence_folder.iterdir()):
+                sequence_folder.rmdir()
             files_keeped=False
+            utils.logger(f"Incomplete flipbook deleted ({len(files)} of {fb_length} frames):\n{sequence_folder.as_posix()}")
 
     if data.get("convertvideo") and files_keeped:
-        fps = int(hou.fps())
-        aspect = int(data.get("aspect"))
+        fps = utils.ffmpegFps(hou.fps())
+        aspect = float(data.get("aspect") or 1)
         resolution = f"{file_resolution[0]}x{file_resolution[1]}"
         start_frame = int(frame_start)
 

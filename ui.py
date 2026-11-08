@@ -153,8 +153,10 @@ class DinoWriter(QWidget):
     def __init__(self,kwargs):
         '''
         Parent widget to houdini window to make it visible
+        (Qt keeps it alive, so shelf script doesn't need to store a reference)
         '''
-        super().__init__()
+        super().__init__(hou.qt.mainWindow())
+        self.aborted = False
 
         '''
         Adding search path to Qt to be able to using "icons:filepath" prefix in stylesheets files
@@ -288,7 +290,7 @@ class DinoWriter(QWidget):
         self.frameend.setCompleter(widgets.Completer(FRAME_RANGES_COMPLETER_LIST))
         self.frameend.installEventFilter(self)
 
-        self.native_ranges = FRAME_RANGES_DROPDOWN_DICT
+        self.native_ranges = dict(FRAME_RANGES_DROPDOWN_DICT)
         self.native_ranges.update(self.addframerange)
         self.frame_menu = widgets.DropDownButton(menu=self.native_ranges.keys(), callback=self.setMenuItemFrameRange)
 
@@ -384,17 +386,26 @@ class DinoWriter(QWidget):
 
 
         '''
+        User refused to create flipbooks folder - don't show the window
+        '''
+        if self.aborted:
+            self.deleteLater()
+            return
+
+        '''
         Track if widget opened via search through childrens of Houdini Window
-        Search by window title which we set in line 169
+        Search by window title which we set in __init__
         '''
         flipbook_widget = None
         for w in hou.qt.mainWindow().children():
-            if w.isWidgetType() and w.windowTitle()==WINDOW_TITLE and w.isVisible():
+            if w is not self and w.isWidgetType() and w.windowTitle()==WINDOW_TITLE and w.isVisible():
                     flipbook_widget = w
 
         if flipbook_widget:
             utils.logger(f"{TITLE} is already open")
+            flipbook_widget.raise_()
             flipbook_widget.activateWindow()
+            self.deleteLater()
         else:
             self.show()
 
@@ -417,8 +428,11 @@ class DinoWriter(QWidget):
         return super().eventFilter(source, event)
     
     def updateResolutions(self):
-        self.resx.setText( str( max( int( self.resx.text() ),MIN_RESOLUTION_X) ) )
-        self.resy.setText( str( max( int( self.resy.text() ),MIN_RESOLUTION_Y) ) )
+        # Empty/invalid values are left as is, main() reports empty fields
+        for line, minimum in ((self.resx, MIN_RESOLUTION_X), (self.resy, MIN_RESOLUTION_Y)):
+            value = utils.toInt(line.text())
+            if value is not None:
+                line.setText(str(max(value, minimum)))
 
     def updateFileFormat(self):
         state = self.convertvideo.isChecked()
@@ -435,9 +449,10 @@ class DinoWriter(QWidget):
         final_list = label
 
         fb_name = self.paths.get("fb_name")
+        version = Fileparser.getVersion(self.filename.text())
         for name in fb_name.split("."):
             part = name.format(name=self.filename.text(),
-                                version=Fileparser.getVersion(self.filename.text()),
+                                version=version,
                                 fileformat=self.fileformat.currentText())
             
             if name == "{name}":
@@ -475,10 +490,13 @@ class DinoWriter(QWidget):
         elif item.find("/")!=-1:
             divisible,divider = item.split("/")
             ratio = int(divisible) / int(divider)
-            resx = self.resx.text()
-            resy = self.resy.text()
-            newresx = max(round(int(resx)*ratio), MIN_RESOLUTION_X)
-            newresy = max(round(int(resy)*ratio), MIN_RESOLUTION_Y)
+            resx = utils.toInt(self.resx.text())
+            resy = utils.toInt(self.resy.text())
+            if resx is None or resy is None:
+                utils.logger("Set resolution before dividing it")
+                return
+            newresx = max(round(resx*ratio), MIN_RESOLUTION_X)
+            newresy = max(round(resy*ratio), MIN_RESOLUTION_Y)
             self.resx.setText(str(newresx))
             self.resy.setText(str(newresy))
         else:
@@ -494,16 +512,26 @@ class DinoWriter(QWidget):
         self.frameend.setText(end)
 
     def ramUsage(self):
-        pixels_count = int(self.resx.text()) * int(self.resy.text())
+        """Returns approximate RAM usage in MB or None if fields can't be evaluated"""
+        resx = utils.toInt(self.resx.text())
+        resy = utils.toInt(self.resy.text())
+        frame_start = utils.evalFrame(self.framestart.text())
+        frame_end = utils.evalFrame(self.frameend.text())
+        if None in (resx, resy, frame_start, frame_end):
+            return None
+
+        pixels_count = resx * resy
         image_in_bytes = pixels_count * 4
         image_in_mbytes = image_in_bytes / BYTES_TOLERANCE / BYTES_TOLERANCE
-        frame_range = max(int(hou.text.expandString(self.frameend.text())) - int(hou.text.expandString(self.framestart.text())) + 1,1)
+        frame_range = max(int(frame_end - frame_start) + 1,1)
         mbytes = image_in_mbytes * frame_range
         return mbytes
     
     def updateRamUsage(self):
         ram = self.ramUsage()
-        if ram<=BYTES_TOLERANCE:
+        if ram is None:
+            ramtext = "RAM Usage: -"
+        elif ram<=BYTES_TOLERANCE:
             ramtext = f"RAM Usage: {ram:.2f} MB"
         else:
             ramtext = f"RAM Usage: {ram/BYTES_TOLERANCE :.2f} GB"
@@ -518,7 +546,7 @@ class DinoWriter(QWidget):
                 pfolder.mkdir(parents=True, exist_ok=True)
             else:
                 utils.logger("No folder to write in flipbooks\nChange path or create folder")
-                self.close()
+                self.aborted = True
                 return []
 
         folders = [x.name for x in pfolder.iterdir() if x.is_dir()]
@@ -539,7 +567,7 @@ class DinoWriter(QWidget):
         empty_array = []
         string_of_empty = ""
         for line in check_lines:
-            if len(line.text())==0:
+            if len(line.text().strip())==0:
                 empty_array.append(line.placeholderText())
         if len(empty_array)>0:
             for i,element in enumerate(empty_array):

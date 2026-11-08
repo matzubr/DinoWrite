@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 from os import environ as osenviron
 import random
+import re
 import shutil
 from pxr import Sdf,Usd
 
@@ -47,6 +48,62 @@ def hmsg(message:str,buttons=("Sorry,Dino!",),level="message") -> None:
     else:
         logger("No message set in hsmg function")
 
+VERSION_FOLDER_PATTERN = re.compile(r"^v(\d+)$")
+VERSION_MIN_PADDING = 3
+
+def nextVersion(folder: Path) -> str:
+    """Get next version string (like 'v004') based on 'vNNN' subfolders in folder.
+
+    Folders that don't match 'vNNN' pattern are ignored.
+    Versions compared as numbers, so v1000 is newer than v999.
+    """
+    last_digit = 0
+    padding = VERSION_MIN_PADDING
+    if folder.exists():
+        for x in folder.iterdir():
+            match = VERSION_FOLDER_PATTERN.match(x.name)
+            if x.is_dir() and match:
+                digit = int(match[1])
+                if digit >= last_digit:
+                    last_digit = digit
+                    padding = max(padding, len(match[1]))
+    return f"v{str(last_digit+1).zfill(padding)}"
+
+def evalFrame(value: str):
+    """Evaluate frame value from line edit: plain number or hscript expression like '$F+10'.
+
+    Returns:
+        int | float | None: Frame number or None if value can't be evaluated
+    """
+    value = str(value).strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        result = hou.hscriptExpression(value)
+        return int(result) if float(result).is_integer() else float(result)
+    except (hou.Error, TypeError, ValueError):
+        return None
+
+def toInt(value: str, default=None):
+    """Safe int conversion of line edit text"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+def ffmpegFps(fps: float) -> str:
+    """Format fps for ffmpeg, keeping fractional (NTSC) frame rates exact"""
+    if float(fps).is_integer():
+        return str(int(fps))
+    ntsc = round(fps * 1.001)
+    if abs(ntsc * 1000 / 1001 - fps) < 0.001:
+        return f"{ntsc*1000}/1001"
+    return f"{fps:.3f}"
+
 class StyleSheet:
     """Parsing info from stylesheet json file
     """
@@ -86,24 +143,21 @@ class FFmpeg:
         
         self.config_path = config_path
         self.cmdvar = cmd
+        self.available = True
         system_os = hou.getenv("OS")
 
         if not config_path and not cmd:
             logger("No config path or cmd set")
 
         # Check for ffmpeg availability in system envs on different os (i believe)
-        if system_os=="Windows_NT":
-            if Path(bin).exists():
-                path = osenviron["PATH"]
+        if system_os=="Windows_NT" and (Path(bin) / "ffmpeg.exe").exists():
+            path = osenviron["PATH"]
+            if str(bin) not in path.split(";"):
                 osenviron["PATH"] = f"{bin};{path}"
-            elif shutil.which("ffmpeg"):
-                pass
-            else:
-                hmsg(f"No ffmpeg found in system PATH env or in {bin}")
-        elif shutil.which("ffmpeg"):
-            pass
-        else:
-            hmsg(f"No ffmpeg found in system PATH env")
+        elif not shutil.which("ffmpeg"):
+            self.available = False
+            location = f" or in {bin}" if system_os=="Windows_NT" else ""
+            hmsg(f"No ffmpeg found in system PATH env{location}\nVideo conversion skipped, sequence is kept")
 
     def cmd(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="") -> list:
 
@@ -111,25 +165,26 @@ class FFmpeg:
             logger("No input or output set")
             return 0
 
-        commands = []
-        if not self.cmdvar:
-            data = {}
-            with open(self.config_path) as cmd:
-                data = json.load(cmd)
-
-            for key in data['cmd']:
-                nkey = key.format(fps=fps, resolution=resolution, aspect=aspect,
-                                start_frame=start_frame, input=input, output=output)
-                commands += nkey.split(" ")
+        if self.cmdvar:
+            template = self.cmdvar
         else:
-            for key in self.cmdvar:
-                nkey = key.format(fps=fps, resolution=resolution, aspect=aspect,
-                                start_frame=start_frame, input=input, output=output)
-                commands += nkey.split(" ")
+            with open(self.config_path) as cmd:
+                template = json.load(cmd)['cmd']
+
+        # Split template entries before formatting, so paths with spaces stay single arguments
+        commands = []
+        for key in template:
+            for token in key.split():
+                commands.append(token.format(fps=fps, resolution=resolution, aspect=aspect,
+                                            start_frame=start_frame, input=input, output=output))
 
         return commands
 
     def convert_to_video(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", delete_input=False):
+        if not self.available:
+            logger("ffmpeg is not available, video conversion skipped")
+            return 0
+
         ffmpeg_cmd = self.cmd(fps=fps, resolution=resolution, aspect=aspect,
                             start_frame=start_frame, input=input, output=output)
         
@@ -144,6 +199,9 @@ class FFmpeg:
             subprocess.run(ffmpeg_cmd, check=True)
         except subprocess.CalledProcessError as e:
             logger(f"Error occured during subprocces run ffmpeg command\n\nErrorLog:\n{e}")
+            return 0
+        except FileNotFoundError as e:
+            logger(f"ffmpeg executable not found\n\nErrorLog:\n{e}")
             return 0
 
         if len(files) != 0 and delete_input:
@@ -188,15 +246,19 @@ class HouViewport:
         self.viewport_pane.setIsMaximized(type)
 
     def colorScheme(self,color=None):
+        """Get current viewport color scheme (hou.viewportColorScheme) or set it.
 
+        Args:
+            color (str | hou.viewportColorScheme, optional): "dark", "grey", "light" or any hou.viewportColorScheme value
+        """
         scheme = {  "dark":hou.viewportColorScheme.Dark,
                     "grey":hou.viewportColorScheme.Grey,
                     "light":hou.viewportColorScheme.Light}
 
-        if not color:
-            return [i for i in scheme if scheme[i]==self.settings.colorScheme()][0]
+        if color is None:
+            return self.settings.colorScheme()
         else:
-            self.settings.setColorScheme(scheme[color])
+            self.settings.setColorScheme(scheme[color] if isinstance(color,str) else color)
 
     def displayBackgroundImage(self,type=True):
         self.settings.setDisplayBackgroundImage(type)
@@ -218,9 +280,16 @@ class HouViewport:
                 if len(render_prims)>1:
                     logger("Multiple rendersettings prims detected!\nResolution will be taken from the first alphabetically ordered prim")
                 render_prim = render_prims[0]
-                resolution = render_prim.GetProperty("resolution").Get()
-                resx = resolution[0]
-                resy = resolution[1]
+                resolution_prop = render_prim.GetProperty("resolution")
+                resolution = resolution_prop.Get() if resolution_prop else None
+                if resolution:
+                    resx = resolution[0]
+                    resy = resolution[1]
+                else:
+                    logger("No resolution authored on rendersettings prim\nReturning resolution from viewport size")
+                    size = viewport.size()
+                    resx = size[2]
+                    resy = size[3]
         
         else: #proccess obj and sops
             
@@ -249,7 +318,9 @@ class HouViewport:
                 aspect = 1
             elif len(render_prims)>0:
                 render_prim = render_prims[0]
-                aspect = render_prim.GetProperty("pixelAspectRatio").Get()
+                aspect_prop = render_prim.GetProperty("pixelAspectRatio")
+                aspect = aspect_prop.Get() if aspect_prop else None
+                aspect = float(aspect) if aspect else 1
         
         else: #procces obj and sops
 
@@ -283,17 +354,10 @@ class FileParser:
         self.paths = data.get("paths")
 
     def getVersion(self,flipbook_name:str) -> str:
+        if len(flipbook_name)==0:
+            return "v001"
         fb_folder = Path(hou.text.expandString(self.paths.get("fb_folder")).format(name=flipbook_name)).resolve()
-        if fb_folder.exists() and len(flipbook_name)!=0:
-            write_folder_vers = [x.name for x in fb_folder.iterdir() if x.is_dir()]
-            write_folder_vers = write_folder_vers if len(write_folder_vers) > 0 else ['v000']
-            last_ver_str = sorted(write_folder_vers)[-1][1:]
-            ver_digit = int(last_ver_str)+1
-            ver_padding = len(last_ver_str)
-            ver_str = f"v{str(ver_digit).zfill(ver_padding)}"
-        else:
-            ver_str = "v001"
-        return ver_str
+        return nextVersion(fb_folder)
 
 class Icons:
     def __init__(self) -> None:
