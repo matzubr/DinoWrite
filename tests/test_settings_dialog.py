@@ -31,8 +31,14 @@ def test_unchanged_dialog_collects_current_settings(dialog):
 
 
 def test_video_tab_shows_found_ffmpeg_and_encoders(dialog):
+    try:
+        import PyOpenColorIO
+        ocio_version = PyOpenColorIO.__version__
+    except ImportError:
+        ocio_version = "NOT FOUND, EXR stay as recorded"
     assert dialog.tools_status.text() == ("ffmpeg: /hfs/bin/hffmpeg\nencoders (tried in order): h264_mf, mpeg4\n"
-                                          "oiiotool: /hfs/bin/hoiiotool (2.5.16)")
+                                          "oiiotool: /hfs/bin/hoiiotool (2.5.16)\n"
+                                          f"PyOpenColorIO: {ocio_version}")
 
 
 def test_acescg_option_is_saved(dialog, tmp_path):

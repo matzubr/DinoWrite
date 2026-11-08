@@ -85,11 +85,11 @@ the viewport as seen.
 - **Video** is encoded from the recorded EXR with the sRGB curve (like "EXR Transfer Func" of the FFmpeg Encode Video
   TOP): it looks like MPlay right after recording. JPG/PNG are encoded as is. Tagged BT.709 / sRGB.
 - **EXR → ACEScg** (`advanced.exr_acescg`, on by default, Settings → General): the kept EXR are converted back to
-  scene-linear ACEScg with the inverse of the viewer's display/view (`hoiiotool`, OpenImageIO 2.5+ that ships with
-  Houdini). In Nuke with an ACES config read them as ACEScg (the default for EXR) and view with the same display/view
+  scene-linear ACEScg with the inverse of the viewer's display/view: the exact transform is baked with PyOpenColorIO
+  into a `.ctf` and applied by `hoiiotool` (both ship with Houdini). In Nuke with an ACES config read them as ACEScg (the default for EXR) and view with the same display/view
   as the Houdini viewer: the picture is the same as in the viewport. Highlights are limited to what was on screen,
-  it's a preview, not a render. Skipped when the viewer doesn't use OCIO, the config isn't an ACES one, hoiiotool is
-  older than 2.5, or the sequence is deleted after the video. If it fails, the EXR stay as recorded.
+  it's a preview, not a render. Skipped when the viewer doesn't use OCIO, the config isn't an ACES one,
+  hoiiotool or PyOpenColorIO aren't found, or the sequence is deleted after the video. If it fails, the EXR stay as recorded.
 
 ### Video codec
 `advanced.video_codec`: `auto` (default) or an encoder name. ffmpeg that ships with Houdini (`hffmpeg`) is built

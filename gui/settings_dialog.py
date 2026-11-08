@@ -261,10 +261,17 @@ class SettingsDialog(RoundedWindow, QDialog):
         oiiotool = acescg.findOiiotool(advanced.get("oiiotool_path", ""))
         version = ".".join(map(str, acescg.oiiotoolVersion(oiiotool))) if oiiotool else ""
         oiiotool_text = f"{oiiotool} ({version or '?'})" if oiiotool else "NOT FOUND, EXR stay as recorded"
+        try:
+            import PyOpenColorIO
+
+            ocio_text = PyOpenColorIO.__version__
+        except ImportError:
+            ocio_text = "NOT FOUND, EXR stay as recorded"
         self.tools_status.setText(
             f"ffmpeg: {ffmpeg_found or 'NOT FOUND, video conversion is skipped'}\n"
             f"encoders (tried in order): {', '.join(encoders) or 'unknown'}\n"
-            f"oiiotool: {oiiotool_text}")
+            f"oiiotool: {oiiotool_text}\n"
+            f"PyOpenColorIO: {ocio_text}")
         # the form layout sized this row before the text was set: reserve height for every line
         lines = self.tools_status.text().count("\n") + 1
         self.tools_status.setMinimumHeight(self.tools_status.fontMetrics().lineSpacing() * lines + 4)

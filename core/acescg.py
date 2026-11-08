@@ -8,8 +8,9 @@ already applied), linearized with the inverse sRGB curve. To get scene-linear AC
 An ACES viewer with the same display/view (Nuke, MPlay, Houdini) then shows exactly what the viewport
 showed. Highlights are limited to what fit on screen: it's a preview, not a render.
 
-Done with hoiiotool that ships with Houdini. --ociodisplay:inverse=1 needs OpenImageIO 2.5+
-(older versions silently ignore it and would apply the forward transform).
+The exact transform is baked with PyOpenColorIO (ships with Houdini) into a .ctf file and applied by
+hoiiotool with --ociofiletransform, which every OpenImageIO with OCIO 2 has. (--ociodisplay:inverse=1
+isn't used: Houdini's hoiiotool silently ignores it and applies the forward transform.)
 Color spaces are addressed by aliases that every ACES cg/studio config has.
 """
 import os
@@ -27,7 +28,7 @@ LINEAR_REC709 = "lin_rec709_srgb"
 SRGB_TEXTURE = "srgb_tx"
 ACESCG = "lin_ap1"
 ACESCG_NAME = "ACEScg"
-MIN_OIIO_VERSION = (2, 5)
+CTF_NAME = "screen_to_acescg.ctf"
 
 _version_cache = {}
 
@@ -91,18 +92,30 @@ def viewerDisplayView(scene_viewer) -> tuple:
     return "", ""
 
 
-def command(tool: str, config: str, input_pattern: str, output_pattern: str, frame_range: tuple,
-            padding: int, display: str, view: str, threads: int = 0) -> list:
+def bakeTransform(config_path: str, display: str, view: str, ctf_path: Path) -> Path:
+    """Write sRGB curve + inverse display/view -> ACEScg as one exact .ctf (raises on failure)"""
+    import PyOpenColorIO as OCIO  # ships with Houdini
+
+    config = OCIO.Config.CreateFromFile(config_path) if config_path else OCIO.GetCurrentConfig()
+    group = OCIO.GroupTransform()
+    group.appendTransform(OCIO.ColorSpaceTransform(src=LINEAR_REC709, dst=SRGB_TEXTURE))
+    group.appendTransform(OCIO.DisplayViewTransform(src=ACESCG, display=display, view=view,
+                                                    direction=OCIO.TRANSFORM_DIR_INVERSE))
+    processor = config.getProcessor(group).getOptimizedProcessor(OCIO.OPTIMIZATION_NONE)
+    processor.createGroupTransform().write(formatName="Color Transform Format", fileName=str(ctf_path),
+                                           config=config)
+    return Path(ctf_path)
+
+
+def command(tool: str, input_pattern: str, output_pattern: str, frame_range: tuple, padding: int,
+            ctf_path: str, threads: int = 0) -> list:
     """hoiiotool argv for a part of the frame range ('#' in patterns is the frame number)"""
     start, end = frame_range
     cmd = [tool]
     if threads:
         cmd += ["--threads", str(int(threads))]
-    if config:
-        cmd += ["--colorconfig", config]
     return cmd + ["--frames", f"{int(start)}-{int(end)}", "--framepadding", str(int(padding)), input_pattern,
-                  "--colorconvert", LINEAR_REC709, SRGB_TEXTURE,
-                  f"--ociodisplay:from={ACESCG}:inverse=1", display, view,
+                  "--ociofiletransform", str(ctf_path),
                   "--attrib", "oiio:ColorSpace", ACESCG_NAME,
                   "-d", "half", "-o", output_pattern]
 
@@ -125,18 +138,18 @@ def splitFrames(start: int, end: int, parts: int) -> list:
     return ranges
 
 
-def commands(tool: str, config: str, input_pattern: str, output_pattern: str, frame_range: tuple,
-             padding: int, display: str, view: str) -> list:
+def commands(tool: str, input_pattern: str, output_pattern: str, frame_range: tuple, padding: int,
+             ctf_path: str) -> list:
     """One hoiiotool command per part of the frame range, to run in parallel"""
     start, end = int(frame_range[0]), int(frame_range[1])
     count = processCount(end - start + 1)
     threads = max(1, (os.cpu_count() or 2) // count)
-    return [command(tool, config, input_pattern, output_pattern, part, padding, display, view, threads)
+    return [command(tool, input_pattern, output_pattern, part, padding, ctf_path, threads)
             for part in splitFrames(start, end, count)]
 
 
-def plan(scene_viewer, oiiotool_path: str = ""):
-    """(tool, config, display, view) when the conversion is possible, otherwise None (reason logged)"""
+def plan(scene_viewer, ctf_path: Path, oiiotool_path: str = ""):
+    """Bake the transform to ctf_path. Returns (tool, display, view) or None when it isn't possible (logged)"""
     display, view = viewerDisplayView(scene_viewer)
     if not display or not view:
         log.info("EXR kept as recorded: the viewer doesn't use OCIO")
@@ -148,9 +161,9 @@ def plan(scene_viewer, oiiotool_path: str = ""):
     if not tool:
         log.warning("EXR kept as recorded: hoiiotool/oiiotool not found")
         return None
-    version = oiiotoolVersion(tool)
-    if version[:2] < MIN_OIIO_VERSION:
-        log.warning("EXR kept as recorded: %s is OpenImageIO %s, inverse display transform needs %s+",
-                    tool, ".".join(map(str, version)) or "?", ".".join(map(str, MIN_OIIO_VERSION)))
+    try:
+        bakeTransform(configPath(), display, view, ctf_path)
+    except Exception as e:  # noqa: BLE001 - no PyOpenColorIO, unknown display/view...: keep EXR as is
+        log.warning("EXR kept as recorded: can't build the OCIO transform: %s", e)
         return None
-    return tool, configPath(), display, view
+    return tool, display, view

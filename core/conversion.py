@@ -8,8 +8,9 @@ Stages (each one optional):
     encode - ffmpeg from the recorded EXR, encoders tried one by one until one works.
              A viewport flipbook EXR is the viewport as seen, linearized with the inverse sRGB curve:
              encoded back with the sRGB curve it looks like MPlay right after recording. JPG/PNG as is.
-    acescg - hoiiotool converts the kept EXR to ACEScg in place (see core/acescg.py), several processes
-             on parts of the frame range. Skipped when the sequence is deleted after the video.
+    acescg - hoiiotool converts the kept EXR to ACEScg in place with a baked OCIO transform
+             (see core/acescg.py), several processes on parts of the frame range.
+             Skipped when the sequence is deleted after the video.
 """
 import os
 import shutil
@@ -83,15 +84,21 @@ class ConversionJob:
             self.codecs = self.converter.codecs() if self.converter.available else []
 
         self.acescg_commands = []
+        self._acescg_dir = None
         if is_exr and advanced.get("exr_acescg", True) and not self.delete_input:
-            planned = acescg.plan(scene_viewer, advanced.get("oiiotool_path", ""))
+            self._acescg_dir = tempfile.TemporaryDirectory(prefix="dinowrite_acescg_")
+            ctf = Path(self._acescg_dir.name) / acescg.CTF_NAME
+            planned = acescg.plan(scene_viewer, ctf, advanced.get("oiiotool_path", ""))
             if planned:
-                tool, config, display, view = planned
+                tool, display, view = planned
                 log.info("EXR -> ACEScg: inverse of '%s' / '%s'", display, view)
                 pattern = self.sequence.name.replace(frame_padding, "#")
                 self.acescg_commands = acescg.commands(
-                    tool, config, (self.sequence.parent / pattern).as_posix(),
-                    (self.temp_folder / pattern).as_posix(), self.frame_range, self.padding, display, view)
+                    tool, (self.sequence.parent / pattern).as_posix(), (self.temp_folder / pattern).as_posix(),
+                    self.frame_range, self.padding, ctf.as_posix())
+            else:
+                self._acescg_dir.cleanup()
+                self._acescg_dir = None
 
         self.stage = PENDING
         self.error = ""
@@ -237,9 +244,10 @@ class ConversionJob:
     def _finish(self, stage: str, error: str = ""):
         self.stage, self.error = stage, error
         shutil.rmtree(self.temp_folder, ignore_errors=True)
-        if self._progress_dir is not None:
-            self._progress_dir.cleanup()
-            self._progress_dir = None
+        for temp in (self._progress_dir, self._acescg_dir):
+            if temp is not None:
+                temp.cleanup()
+        self._progress_dir = self._acescg_dir = None
         if stage == CANCELLED:
             log.warning("Cancelled, image sequence is kept as recorded")
         elif stage == FAILED:

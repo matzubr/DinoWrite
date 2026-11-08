@@ -60,7 +60,7 @@ def ocio_viewer(monkeypatch, hou):
     monkeypatch.setattr(hou, "Color", SimpleNamespace(ocio_spaces=lambda: ("ACEScg", "Linear Rec.709 (sRGB)"),
                                                       ocio_configPath=lambda: "config.ocio"), raising=False)
     monkeypatch.setattr(acescg, "findOiiotool", lambda custom="": "hoiiotool")
-    monkeypatch.setattr(acescg, "oiiotoolVersion", lambda tool: (2, 5, 16, 0))
+    monkeypatch.setattr(acescg, "bakeTransform", lambda config, display, view, ctf: Path(ctf).write_text("ctf"))
     return SimpleNamespace(usingOCIO=lambda: True, getOCIODisplay=lambda: "Rec.1886 Rec.709 - Display",
                            getOCIOView=lambda: "ACES 1.0 - SDR Video")
 
@@ -227,8 +227,7 @@ def test_exr_converted_to_acescg_in_place_without_video(settings, sequence, tool
     job = _run(_acescgJob(settings, sequence, ocio_viewer, convert_video=False))
     assert job.succeeded and job.video is None and job.title == "shot.v001.####.exr"
     cmd = tools.launched[0].cmds[0]
-    assert cmd[cmd.index("--colorconvert") + 1:cmd.index("--colorconvert") + 3] == ["lin_rec709_srgb", "srgb_tx"]
-    assert "--ociodisplay:from=lin_ap1:inverse=1" in cmd
+    assert cmd[cmd.index("--ociofiletransform") + 1].endswith("screen_to_acescg.ctf")
     assert (sequence.parent / "shot.v001.1005.exr").read_text() == "acescg", "originals replaced"
     assert not job.temp_folder.exists()
 
@@ -258,15 +257,37 @@ def test_acescg_failure_keeps_recorded_exr_and_video(settings, sequence, tools, 
     assert job.video.exists() and not job.temp_folder.exists()
 
 
-def test_acescg_skipped_without_ocio_or_old_oiiotool(settings, sequence, tools, ocio_viewer, monkeypatch):
+def test_acescg_skipped_without_ocio_or_transform(settings, sequence, tools, ocio_viewer, monkeypatch):
     from DinoWrite.core import acescg
     no_ocio = SimpleNamespace(usingOCIO=lambda: False)
     assert not _acescgJob(settings, sequence, no_ocio, convert_video=False).hasWork
-    monkeypatch.setattr(acescg, "oiiotoolVersion", lambda tool: (2, 4, 17, 0))
+
+    def no_pyocio(*args):
+        raise ImportError("No module named 'PyOpenColorIO'")
+    monkeypatch.setattr(acescg, "bakeTransform", no_pyocio)
     assert not _acescgJob(settings, sequence, ocio_viewer, convert_video=False).hasWork
     settings["advanced"]["exr_acescg"] = False
-    monkeypatch.setattr(acescg, "oiiotoolVersion", lambda tool: (2, 5, 16, 0))
-    assert not _acescgJob(settings, sequence, ocio_viewer, convert_video=False).hasWork
+    assert not _acescgJob(settings, sequence, no_ocio, convert_video=False).hasWork
+
+
+def test_baked_transform_inverts_the_viewer_display_view(tmp_path):
+    """Real OCIO: screen pixels -> baked ctf -> ACEScg -> ACES SDR display gives the screen pixels back"""
+    OCIO = pytest.importorskip("PyOpenColorIO")
+    from DinoWrite.core import acescg
+    config = "ocio://cg-config-v2.1.0_aces-v1.3_ocio-v2.3"
+    display, view = "Rec.1886 Rec.709 - Display", "ACES 1.0 - SDR Video"
+    ctf = acescg.bakeTransform(config, display, view, tmp_path / "t.ctf")
+    cfg = OCIO.Config.CreateFromFile(config)
+    linear = [0.0, 0.02, 0.18, 0.5]  # recorded EXR values (linearized screen)
+    pixels = [value for value in linear for _ in range(3)]
+    # applyRGB returns new values for Python lists
+    screen = cfg.getProcessor("lin_rec709_srgb", "srgb_tx").getDefaultCPUProcessor().applyRGB(list(pixels))
+    to_acescg = cfg.getProcessor(OCIO.FileTransform(src=str(ctf))).getDefaultCPUProcessor()
+    acescg_pixels = to_acescg.applyRGB(list(pixels))
+    back = cfg.getProcessor("ACEScg", display, view, OCIO.TRANSFORM_DIR_FORWARD).getDefaultCPUProcessor() \
+        .applyRGB(list(acescg_pixels))
+    assert all(abs(a - b) < 1 / 255 for a, b in zip(back, screen))
+    assert acescg_pixels[6] > pixels[6], "mid grey is lifted back to scene linear (inverse, not forward)"
 
 
 def test_parse_oiiotool_version():
