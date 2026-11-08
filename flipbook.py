@@ -8,7 +8,7 @@ import webbrowser as wb
 from . import config
 from .core import ffmpeg, helpers, ocio
 from .core.log import hmsg, log
-from .core.viewport import HouViewport
+from .core.viewport import TRUE_RESOLUTION_MODES, HouViewport, processEvents, fitsResolution
 
 def start(data,kwargs):
 
@@ -79,32 +79,10 @@ def start(data,kwargs):
     # flipbook_options.renderAllViewports(False)
     flipbook_options.antialias(hou.flipbookAntialias.HighQuality)
 
-    # Remember viewport state before changing it
-    prev_color_scheme = viewport.colorScheme() if data.get("blackbg") else None
-
-    try:
-        # Maximize window to get better quality
-        viewport.maximize_viewport()
-
-        # Change background color
-        if data.get("blackbg"):
-            viewport.colorScheme("dark")
-
-        # Disable background image preview
-        if data.get("bgimage"):
-            viewport.displayBackgroundImage(False)
-
-        # Start Flipbook
-        viewport.startFlipbook(flipbook_options)
-    finally:
-        # Always return viewport to its original state, even if flipbook failed
-        viewport.maximize_viewport(False)
-
-        if prev_color_scheme is not None:
-            viewport.colorScheme(prev_color_scheme)
-
-        if data.get("bgimage"):
-            viewport.displayBackgroundImage()
+    record(viewport, flipbook_options, file_resolution,
+           mode=advanced.get("true_resolution", "auto"),
+           black_background=data.get("blackbg"),
+           hide_background_image=data.get("bgimage"))
 
     # #Open dir
     if data.get("openfolder"):
@@ -138,6 +116,65 @@ def start(data,kwargs):
 
 
 COLOR_TRANSFORMS = ("ocio", "srgb", "gamma22", "bt709", "none")
+
+
+def chooseRecorder(viewport, resolution: tuple, mode: str):
+    """Viewer to record from: the maximized viewport, or a torn off copy sized to the resolution.
+
+    Returns:
+        HouViewport: recorder (call .close() after recording, it's a no-op for the main viewer)
+    """
+    if mode not in TRUE_RESOLUTION_MODES:
+        log.warning("Unknown true_resolution '%s', expected one of: %s. Using auto",
+                    mode, ", ".join(TRUE_RESOLUTION_MODES))
+        mode = "auto"
+    if mode == "off":
+        return viewport
+    if mode == "auto":
+        viewport.maximize_viewport()
+        processEvents()
+        if fitsResolution(viewport.viewportSize(), resolution):
+            return viewport
+        viewport.maximize_viewport(False)
+    try:
+        torn, achieved = viewport.tearOff(resolution)
+    except Exception as e:  # any Houdini/Qt failure: record the usual way instead
+        log.warning("Can't tear off viewer copy, recording in the maximized viewport: %s", e)
+        return viewport
+    if not fitsResolution(achieved, resolution):
+        log.warning("Viewer window is limited to %sx%s by the OS, flipbook will be scaled to %sx%s",
+                    achieved[0], achieved[1], resolution[0], resolution[1])
+    else:
+        log.info("Recording %sx%s in a torn off viewer copy", resolution[0], resolution[1])
+    return torn
+
+
+def record(viewport, flipbook_options, resolution: tuple, mode: str = "auto",
+           black_background: bool = False, hide_background_image: bool = False):
+    """Record flipbook, always returning viewers to their original state"""
+    recorder = viewport
+    prev_color_scheme = None
+    try:
+        recorder = chooseRecorder(viewport, resolution, mode)
+        if recorder is viewport:
+            # Maximize window to get better quality
+            viewport.maximize_viewport()
+
+        # Remember viewer state before changing it
+        if black_background:
+            prev_color_scheme = recorder.colorScheme()
+            recorder.colorScheme("dark")
+        if hide_background_image:
+            recorder.displayBackgroundImage(False)
+
+        recorder.startFlipbook(flipbook_options)
+    finally:
+        if prev_color_scheme is not None:
+            recorder.colorScheme(prev_color_scheme)
+        if hide_background_image:
+            recorder.displayBackgroundImage()
+        recorder.close()
+        viewport.maximize_viewport(False)
 
 
 def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_range: tuple,

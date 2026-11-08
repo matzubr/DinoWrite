@@ -11,7 +11,7 @@ This is a fully Python tool that allows you to write flipbooks in Houdini
  - A lot of customization available for the UI and settings (settings dialog behind the gear button)
  - Keeping track of previous settings
  - Folders are automatically versioned
- - Enlarge the viewport window to improve quality
+ - True resolution: a 4K flipbook on a 2K monitor is recorded in a torn off copy of the viewer sized to 4K (bigger than the screen) instead of stretching the viewport
  - Support multiple viewports
  - Displaying existing flipbooks (can grab their name)
  - Grabs resolution from camera or divides it in half
@@ -39,6 +39,7 @@ that differ from defaults, so updating the tool doesn't wipe them.
 
 ### Attentions
 ---
+- Recording viewer (`advanced.true_resolution`): `auto` (default) records in the maximized viewport when the resolution fits, otherwise in a floating copy of the viewer sized to the resolution, which is closed afterwards. `always` always uses the copy, `off` never does. Some OSes (macOS, some Linux window managers) don't allow windows bigger than the screen: then a warning is logged and Houdini scales the image as before. On HiDPI screens a 4K viewport fits into a smaller window
 - By default, the script deletes your sequence if it doesn't cover the full length of the frame range (you can disable it in the `settings.json` file)  
 - By default, after converting sequence to video, script delete sequence files (which can also be disabled in `settings.json`)  
 - By default, sequences are written in native pixel aspect, but Houdini flipbooks cannot handle that with the original resolution. It can be fixed in Nuke via the reformat node. But ffmpeg conversion handles pixel aspect and gives you the correct image (which can also be modified in `settings.json`)

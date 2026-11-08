@@ -16,6 +16,11 @@ COLOR_TRANSFORMS = (
     ("bt709", "Rec.709 transfer"),
     ("none", "None (sequence is already display-encoded)"),
 )
+TRUE_RESOLUTION = (
+    ("auto", "Separate viewer window when resolution is bigger than the viewport"),
+    ("always", "Always record in a separate viewer window"),
+    ("off", "Maximized viewport (Houdini scales to the resolution)"),
+)
 FROM_VIEWER = "From viewer"
 FRAME_TOKEN = re.compile(r"\$F\d+")
 
@@ -73,12 +78,19 @@ class SettingsDialog(QDialog):
         self.tmp_folder = QLineEdit()
         self.tmp_folder.setToolTip("Where the window remembers last used values")
         self.delete_incomplete = QCheckBox("Delete flipbook if it doesn't cover the frame range")
+        self.true_resolution = QComboBox()
+        for key, label in TRUE_RESOLUTION:
+            self.true_resolution.addItem(label, key)
+        self.true_resolution.setToolTip(
+            "A 4K flipbook on a 2K monitor: a floating copy of the viewer is sized to the resolution\n"
+            "(bigger than the screen), so frames are rendered at true 4K instead of being stretched")
 
         form = QFormLayout()
         form.addRow("Flipbooks folder", self.fb_folder)
         form.addRow("File name", self.fb_name)
         form.addRow("Video extension", self.fb_video_ext)
         form.addRow("Temp folder", self.tmp_folder)
+        form.addRow("Record viewer", self.true_resolution)
         form.addRow("", self.delete_incomplete)
         return self._page(form)
 
@@ -179,6 +191,7 @@ class SettingsDialog(QDialog):
         self.fb_video_ext.setCurrentText(paths.get("fb_video_ext", "mov"))
         self.tmp_folder.setText(paths.get("tmp_folder", ""))
         self.delete_incomplete.setChecked(bool(advanced.get("delete_incomplete_fb")))
+        self.true_resolution.setCurrentIndex(max(self.true_resolution.findData(advanced.get("true_resolution", "auto")), 0))
 
         index = self.color_transform.findData(advanced.get("color_transform", "ocio"))
         self.color_transform.setCurrentIndex(max(index, 0))
@@ -214,6 +227,7 @@ class SettingsDialog(QDialog):
             errors.append("File name must contain a frame token like $F4")
 
         advanced["delete_incomplete_fb"] = self.delete_incomplete.isChecked()
+        advanced["true_resolution"] = self.true_resolution.currentData()
         advanced["color_transform"] = self.color_transform.currentData()
         advanced["ocio_display"] = self._ocioValue(self.ocio_display)
         advanced["ocio_view"] = self._ocioValue(self.ocio_view)

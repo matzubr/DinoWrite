@@ -43,6 +43,7 @@
         "{output}"
     ],
     "advanced":{
+        "true_resolution": "auto",
         "ffmpeg_path": "",
         "color_transform": "ocio",
         "ocio_display": "",
