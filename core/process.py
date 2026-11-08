@@ -1,5 +1,6 @@
 """Run external tools (ffmpeg, hoiiotool) with Houdini progress and cancel (Esc / interrupt dialog)."""
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -8,6 +9,9 @@ import hou
 from .log import log
 
 POLL_SECONDS = 0.2
+
+# Houdini is a GUI app: on Windows every console tool started from it pops up its own console window
+NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
 OUTPUT_TAIL_LINES = 15
 
 
@@ -43,7 +47,8 @@ def run(cmd: list, label: str, progress=None) -> Result:
     # Output goes to a temp file, not a pipe: a full pipe buffer would block the process
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as output:
         try:
-            proc = subprocess.Popen(cmd, stdout=output, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            proc = subprocess.Popen(cmd, stdout=output, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                    **NO_WINDOW)
         except OSError as e:
             log.error("%s: can't start %s: %s", label, cmd[0], e)
             return Result(error=str(e))
