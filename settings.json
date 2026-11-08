@@ -38,6 +38,7 @@
         "-color_trc {color_trc}",
         "-colorspace bt709",
         "-color_range tv",
+        "-metadata comment={comment}",
         "{output}"
     ],
     "advanced":{

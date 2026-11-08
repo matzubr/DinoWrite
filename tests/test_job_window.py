@@ -77,10 +77,14 @@ def test_closing_window_cancels_running_job(make_window):
     assert job.cancelled
 
 
-def test_windows_stack_above_each_other(make_window):
+def test_window_is_centered_and_jobs_stack_below(make_window, houdini):
+    houdini.setGeometry(0, 0, 1600, 1000)
     first = make_window(FakeJob())
     second = make_window(FakeJob())
-    assert second.y() < first.y()
+    center = houdini.frameGeometry().center()
+    assert abs(first.geometry().center().x() - center.x()) <= 2
+    assert abs(first.geometry().center().y() - center.y()) <= 2
+    assert second.y() > first.y()
 
 
 def test_progress_window_stays_on_top_and_reports_to_status_bar(make_window, hou, monkeypatch):

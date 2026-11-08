@@ -34,6 +34,10 @@ def sequenceFiles(sequence: Path, frame_padding: str) -> list:
             and f.name[len(prefix):len(f.name) - len(suffix)].isdigit()]
 
 
+def _describe(display_view: tuple) -> str:
+    return " / ".join(part or "?" for part in display_view)
+
+
 def videoPath(sequence: Path, frame_padding: str, video_ext: str) -> Path:
     """name.v001.$F4.exr -> name.v001.mov (works for name_$F4.exr too)"""
     return sequence.parent / (sequence.name.partition(frame_padding)[0].rstrip("._-") + f".{video_ext}")
@@ -108,7 +112,9 @@ class ConversionJob:
         if not self.display or not self.view:
             log.warning("Can't resolve OCIO display/view")
             return []
-        log.info("Video OCIO display/view: '%s' / '%s' (source: %s)", self.display, self.view, source)
+        log.info("Video OCIO display/view: '%s' / '%s' (source: %s; viewer: %s; config default: %s)",
+                 self.display, self.view, source, _describe(ocio.displayView(scene_viewer, source="viewer")),
+                 _describe(ocio.displayView(None)))
         display_sequence = self.temp_folder / (self.sequence.stem + ".png")
         return ocio.displayCommands(
             tool, ocio.configPath(),
@@ -234,9 +240,16 @@ class ConversionJob:
             input=source.as_posix().replace(self.frame_padding, f"%0{self.padding}d"),
             exr_transfer="" if self.color_transform == "none" else self.color_transform,
             color_trc=self.colorTrc(),
+            comment=self.colorDescription(),
             **self.encode_values)
         label = f"DinoWrite: encoding video ({self.codec})" if self.codec else "DinoWrite: encoding video"
         self._processes = process.Processes([cmd], label)
+
+    def colorDescription(self) -> str:
+        """Written into the video metadata (VLC: Tools -> Media Information -> Comments)"""
+        if self.color_transform == "none" and self.ocio_commands:
+            return f"DinoWrite: OCIO {self.display} / {self.view}"
+        return f"DinoWrite: {self.color_transform} transfer"
 
     def colorTrc(self) -> str:
         """Transfer tag of the encoded video, matching how its pixels were encoded"""

@@ -84,20 +84,21 @@ class JobWindow(RoundedWindow, QWidget):
         self.timer.setInterval(POLL_MS)
         self.timer.timeout.connect(self.tick)
 
-        self._placeBottomRight()
+        self._placeCenter()
         self.show()
         self.timer.start()
 
-    def _placeBottomRight(self):
-        """Bottom right corner of the Houdini window, stacked above other running jobs"""
+    def _placeCenter(self):
+        """Center of the Houdini window (where the user looks), other running jobs stacked below"""
         parent = self.parentWidget()
         if parent is None:
             return
         geometry = parent.frameGeometry()
-        others = [w for w in parent.findChildren(JobWindow) if w is not self and w.isVisible()]
-        x = geometry.right() - WINDOW_WIDTH - MARGIN
-        y = geometry.bottom() - (WINDOW_HEIGHT + MARGIN) * (len(others) + 1) - MARGIN
-        self.move(max(geometry.left(), x), max(geometry.top(), y))
+        others = [w for w in parent.findChildren(QWidget) if w is not self and w.isVisible()
+                  and w.objectName() == OBJECT_NAME]
+        x = geometry.center().x() - WINDOW_WIDTH // 2
+        y = geometry.center().y() - WINDOW_HEIGHT // 2 + (WINDOW_HEIGHT + MARGIN) * len(others)
+        self.move(x, min(y, geometry.bottom() - WINDOW_HEIGHT))
 
     def tick(self):
         finished = self.job.step()

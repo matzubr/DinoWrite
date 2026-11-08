@@ -93,6 +93,7 @@ def test_ocio_runs_in_parallel_parts_then_encodes_pngs(settings, sequence, tools
     assert encode[encode.index("-i") + 1].endswith("_ocio_tmp/shot.v001.%04d.png")
     assert "lutrgb" not in " ".join(encode), "PNGs are display-encoded already"
     assert "color_trc=iec61966-2-1" in " ".join(encode), "sRGB display -> sRGB transfer tag"
+    assert "comment=DinoWrite: OCIO sRGB / ACES SDR" in encode
     assert not job.temp_folder.exists(), "temp PNGs removed"
 
 
@@ -218,3 +219,7 @@ def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch, codec):
                             "-f", "rawvideo", "-"], check=True, capture_output=True, stdin=subprocess.DEVNULL,
                            timeout=60).stdout
     assert all(abs(channel - 118) <= 2 for channel in pixel)
+    tags = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags=comment", "-of", "default=nw=1",
+                           (folder / "grey.v001.mov").as_posix()], capture_output=True, text=True,
+                          stdin=subprocess.DEVNULL, timeout=60).stdout
+    assert "DinoWrite: srgb transfer" in tags

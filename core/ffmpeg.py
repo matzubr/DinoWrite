@@ -149,7 +149,7 @@ class FFmpeg:
                  "Video conversion skipped, sequence is kept")
 
     def cmd(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", exr_transfer="",
-            codec="libx264", color_trc="iec61966-2-1") -> list:
+            codec="libx264", color_trc="iec61966-2-1", comment="") -> list:
         """Build ffmpeg argv from template.
 
         Template entry whose placeholder is empty is skipped entirely,
@@ -166,7 +166,7 @@ class FFmpeg:
 
         # Split template entries before formatting, so paths with spaces stay single arguments
         values = dict(fps=fps, resolution=resolution, aspect=aspect,
-                    start_frame=start_frame, input=input, output=output, color_trc=color_trc,
+                    start_frame=start_frame, input=input, output=output, color_trc=color_trc, comment=comment,
                     vf=videoFilter(exr_transfer, color_trc))
         commands = []
         for key in template:
