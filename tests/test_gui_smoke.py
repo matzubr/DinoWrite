@@ -63,6 +63,7 @@ def test_status_line_shows_record_and_video(houdini, hou, monkeypatch):
     window = DinoWrite.show({})
     monkeypatch.setattr(window.hou_viewport, "getPaneTab",
                         lambda: SimpleNamespace(usingOCIO=lambda: False, qtScreenGeometry=lambda: 1 / 0))
+    window.settings["advanced"]["color_transform"] = "ocio"
     window.resx.setText("20000")
     window.resy.setText("10000")
     window.convertvideo.setChecked(True)
@@ -107,6 +108,7 @@ def test_long_video_status_does_not_widen_window(houdini, hou, monkeypatch):
     window = DinoWrite.show({})
     monkeypatch.setattr(window.hou_viewport, "getPaneTab",
                         lambda: SimpleNamespace(usingOCIO=lambda: False, qtScreenGeometry=lambda: 1 / 0))
+    window.settings["advanced"]["color_transform"] = "ocio"
     window.convertvideo.setChecked(False)
     window.updateStatus()
     window.layout().activate()

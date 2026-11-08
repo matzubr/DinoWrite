@@ -83,6 +83,7 @@ def _run(job):
 
 
 def test_ocio_runs_in_parallel_parts_then_encodes_pngs(settings, sequence, tools):
+    settings["advanced"]["color_transform"] = "ocio"
     settings["advanced"]["ocio_processes"] = 3
     job = _run(_job(settings, sequence))
 
@@ -134,6 +135,7 @@ def test_success_deletes_only_sequence_frames(settings, sequence, tools):
 
 
 def test_cancel_during_ocio_keeps_sequence_and_skips_encode(settings, sequence, tools):
+    settings["advanced"]["color_transform"] = "ocio"
     settings["advanced"]["conversion_delete_input_sequence"] = True
     job = _job(settings, sequence)
     job.start()
@@ -146,6 +148,7 @@ def test_cancel_during_ocio_keeps_sequence_and_skips_encode(settings, sequence, 
 
 
 def test_status_and_progress(settings, sequence, tools):
+    settings["advanced"]["color_transform"] = "ocio"
     job = _job(settings, sequence)
     job.start()
     assert job.status.startswith("OCIO ACES SDR: 0/10 frames · ")  # process count depends on CPU cores
@@ -233,3 +236,18 @@ def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch, codec):
                            (folder / "grey.v001.mov").as_posix()], capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, timeout=60).stdout
     assert "DinoWrite: srgb transfer" in tags
+
+
+def test_auto_color_is_srgb_for_viewport_and_ocio_for_beauty_pass(settings, tmp_path):
+    settings["advanced"]["color_transform"] = "auto"
+    sequence = tmp_path / "shot.v001.$F4.exr"
+    viewport_job = conversion.ConversionJob(settings, None, sequence, "$F4", (1, 2), (64, 64), 1.0, "mov")
+    assert viewport_job.color_transform == "srgb" and not viewport_job.ocio_commands
+    assert viewport_job.colorTrc() == "iec61966-2-1"
+    assert conversion.autoTransform(beauty_pass=True) == "ocio"
+
+
+def test_is_beauty_pass():
+    assert conversion.isBeautyPass(SimpleNamespace(beautyPassOnly=lambda: True))
+    assert not conversion.isBeautyPass(SimpleNamespace(beautyPassOnly=lambda: False))
+    assert not conversion.isBeautyPass(object())

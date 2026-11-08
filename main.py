@@ -61,7 +61,7 @@ import hou
 import json
 
 from . import config, flipbook
-from .core import helpers, ocio
+from .core import conversion, helpers, ocio
 from .core.log import hmsg, log
 from .core.viewport import HouViewport
 from .gui import widgets
@@ -395,7 +395,16 @@ class DinoWriter(RoundedWindow, QWidget):
         advanced = self.settings["advanced"]
         if self.fileformat.currentText() != "exr":
             return "as is"
-        mode = advanced.get("color_transform", "ocio")
+        mode = advanced.get("color_transform", "auto")
+        if mode == "auto":
+            try:
+                beauty_pass = conversion.isBeautyPass(self.hou_viewport.getPaneTab().flipbookSettings())
+            except Exception:  # noqa: BLE001
+                beauty_pass = False
+            mode = conversion.autoTransform(beauty_pass)
+            if mode == "srgb":
+                self.videoline.setExtraToolTip("Viewport flipbook: sRGB, same as MPlay shows it after recording")
+                return "sRGB (like MPlay)"
         if mode != "ocio":
             return {"srgb": "sRGB", "gamma22": "gamma 2.2", "bt709": "Rec.709", "none": "as is"}.get(mode, mode)
         try:

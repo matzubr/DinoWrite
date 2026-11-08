@@ -18,7 +18,7 @@ import hou
 from . import ffmpeg, helpers, ocio, process
 from .log import log
 
-COLOR_TRANSFORMS = ("ocio", "srgb", "gamma22", "bt709", "none")
+COLOR_TRANSFORMS = ("auto", "ocio", "srgb", "gamma22", "bt709", "none")
 OCIO_TEMP_FOLDER = "_ocio_tmp"
 
 PENDING, OCIO, ENCODE, DONE, FAILED, CANCELLED = "pending", "ocio", "encode", "done", "failed", "cancelled"
@@ -43,10 +43,28 @@ def videoPath(sequence: Path, frame_padding: str, video_ext: str) -> Path:
     return sequence.parent / (sequence.name.partition(frame_padding)[0].rstrip("._-") + f".{video_ext}")
 
 
+def autoTransform(beauty_pass: bool) -> str:
+    """Color transform for advanced.color_transform = auto"""
+    return "ocio" if beauty_pass else "srgb"
+
+
+def isBeautyPass(flipbook_settings) -> bool:
+    """'Beauty pass only' flipbook: scene linear EXR. Unknown -> False (regular viewport flipbook)"""
+    try:
+        return bool(flipbook_settings.beautyPassOnly())
+    except Exception:  # noqa: BLE001 - old Houdini / mocked settings
+        return False
+
+
 class ConversionJob:
     """Convert a written flipbook sequence to video.
 
     Color (advanced.color_transform):
+        auto    - (default) srgb for regular viewport flipbooks, ocio for "Beauty pass only" ones.
+                  A viewport flipbook stores the viewport image as seen (display transform already applied),
+                  linearized with the inverse sRGB curve: MPlay shows it right after recording with plain sRGB,
+                  so sRGB gives the same picture. OCIO display/view on top would tone map it a second time.
+                  A beauty pass flipbook is scene linear and needs the OCIO display/view.
         ocio    - OCIO display/view of the viewer via hoiiotool (falls back to srgb if it isn't available/fails)
         srgb, gamma22, bt709 - fixed transfer function for linear EXR
         none    - pass pixel values as is (for display-encoded sequences)
@@ -57,7 +75,7 @@ class ConversionJob:
     """
 
     def __init__(self, settings: dict, scene_viewer, sequence: Path, frame_padding: str, frame_range: tuple,
-                 resolution: tuple, pixel_aspect: float, video_ext: str):
+                 resolution: tuple, pixel_aspect: float, video_ext: str, beauty_pass: bool = False):
         advanced = settings["advanced"]
         self.sequence = Path(sequence)
         self.frame_padding = frame_padding
@@ -80,11 +98,15 @@ class ConversionJob:
         self.codecs = self.converter.codecs() if self.converter.available else []
 
         is_exr = self.sequence.suffix.lower() == ".exr"
-        self.color_transform = advanced.get("color_transform", "ocio") if is_exr else "none"
+        self.color_transform = advanced.get("color_transform", "auto") if is_exr else "none"
         if self.color_transform not in COLOR_TRANSFORMS:
-            log.warning("Unknown color_transform '%s', expected one of: %s. Using srgb",
+            log.warning("Unknown color_transform '%s', expected one of: %s. Using auto",
                         self.color_transform, ", ".join(COLOR_TRANSFORMS))
-            self.color_transform = "srgb"
+            self.color_transform = "auto"
+        if self.color_transform == "auto":
+            self.color_transform = autoTransform(beauty_pass)
+            log.info("Video color: %s (%s)", self.color_transform,
+                     "beauty pass flipbook, scene linear" if beauty_pass else "viewport flipbook, like MPlay")
         self.ocio_commands = []
         self.display = self.view = ""
         if self.color_transform == "ocio":

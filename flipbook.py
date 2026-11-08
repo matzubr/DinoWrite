@@ -117,7 +117,8 @@ def start(data,kwargs):
                                    frame_range=(frame_start, frame_end),
                                    resolution=file_resolution,
                                    pixel_aspect=float(data.get("aspect") or 1),
-                                   video_ext=fb_video_ext)
+                                   video_ext=fb_video_ext,
+                                   beauty_pass=conversion.isBeautyPass(flipbook_options))
     if hou.isUIAvailable():
         # Conversion runs in the background: Houdini stays usable, progress/cancel in a small window
         from .gui.job_window import JobWindow
@@ -243,6 +244,8 @@ def warmUp(recorder, flipbook_options):
 def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_range: tuple,
             resolution: tuple, pixel_aspect: float, video_ext: str):
     """Convert blocking (no UI / scripts). Returns the written video path or None."""
-    job = conversion.ConversionJob(settings, viewport.getPaneTab(), sequence, frame_padding, frame_range,
-                                   resolution, pixel_aspect, video_ext)
+    pane = viewport.getPaneTab()
+    beauty_pass = conversion.isBeautyPass(pane.flipbookSettings()) if pane is not None else False
+    job = conversion.ConversionJob(settings, pane, sequence, frame_padding, frame_range,
+                                   resolution, pixel_aspect, video_ext, beauty_pass=beauty_pass)
     return job.runBlocking()
