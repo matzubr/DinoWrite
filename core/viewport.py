@@ -310,5 +310,12 @@ class HouViewport:
         else:
             return camera_path.split("/")[-1]
     
+    def isDisplayReferred(self) -> bool:
+        """Flipbook of this viewer is written as seen (display transform applied) unless 'Beauty pass only'"""
+        try:
+            return not self.viewport_panetab.flipbookSettings().beautyPassOnly()
+        except (AttributeError, hou.Error):
+            return True
+
     def flipbook_settings(self):
         return self.viewport_panetab.flipbookSettings().stash()

@@ -77,9 +77,16 @@ Some OSes (macOS, some Linux window managers) don't allow windows bigger than th
 
 ### Video colors
 `advanced.color_transform`:
-- `ocio` (default): the same OCIO display/view as the Scene Viewer, applied by `hoiiotool` that ships with Houdini (`$HFS/bin/hoiiotool`). Display/view can be fixed with `ocio_display` / `ocio_view`, EXR color space with `ocio_input_space` (default: `scene_linear` role). Falls back to `srgb` if hoiiotool is missing or fails
+- `auto` (default): a regular viewport flipbook (without "Beauty pass only") is written by Houdini as you see it,
+  with the display transform already applied, so it's encoded **as recorded**. Only a beauty pass flipbook is linear:
+  it gets the `ocio` transform. Transforming display-referred frames again makes the video darker, more contrasty
+  and oversaturated than MPlay
+- `ocio`: OCIO display/view applied by `hoiiotool` that ships with Houdini (`$HFS/bin/hoiiotool`), for linear EXR.
+  By default the config default display/view (like MPlay, `ocio_source: mplay`), or the viewer's (`ocio_source: viewer`),
+  or fixed with `ocio_display` / `ocio_view`. EXR color space: `ocio_input_space` (default `scene_linear` role).
+  Falls back to `srgb` if hoiiotool is missing or fails
 - `srgb`, `gamma22`, `bt709`: fixed transfer for linear EXR
-- `none`: pass pixels as is. Use it if your EXRs are already display-encoded (video looks washed out)
+- `none`: always pass pixels as is
 
 The video is encoded with BT.709 matrix and tagged as BT.709 / sRGB.
 

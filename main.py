@@ -395,7 +395,11 @@ class DinoWriter(RoundedWindow, QWidget):
         advanced = self.settings["advanced"]
         if self.fileformat.currentText() != "exr":
             return "as is"
-        mode = advanced.get("color_transform", "ocio")
+        mode = advanced.get("color_transform", "auto")
+        if mode == "auto":
+            mode = "none" if self.hou_viewport.isDisplayReferred() else "ocio"
+        if mode == "none":
+            return "as recorded (like the viewport)"
         if mode != "ocio":
             return {"srgb": "sRGB", "gamma22": "gamma 2.2", "bt709": "Rec.709", "none": "as is"}.get(mode, mode)
         try:

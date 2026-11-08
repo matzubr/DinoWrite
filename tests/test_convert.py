@@ -70,8 +70,10 @@ def tools(monkeypatch):
     return FakeProcesses
 
 
-def _job(settings, sequence):
-    return conversion.ConversionJob(settings, None, sequence, "$F4", (1001, 1010), (1920, 1080), 1.0, "mov")
+def _job(settings, sequence, display_referred=False):
+    """display_referred=False: beauty pass flipbook (linear EXR), the OCIO path"""
+    return conversion.ConversionJob(settings, None, sequence, "$F4", (1001, 1010), (1920, 1080), 1.0, "mov",
+                                    display_referred=display_referred)
 
 
 def _run(job):
@@ -163,7 +165,7 @@ def test_no_ffmpeg_fails_without_running_anything(settings, sequence, tools, mon
 
 def test_convert_blocking_returns_video_path(settings, sequence, tools):
     settings["advanced"]["color_transform"] = "srgb"
-    viewer = SimpleNamespace(getPaneTab=lambda: None)
+    viewer = SimpleNamespace(getPaneTab=lambda: None, isDisplayReferred=lambda: False)
     video = flipbook.convert(settings, viewer, sequence, "$F4", (1001, 1010), (1920, 1080), 1.0, "mov")
     assert video == sequence.parent / "shot.v001.mov"
 
@@ -183,7 +185,7 @@ def test_open_result(monkeypatch, tmp_path):
 
 
 
-VIEWPORT = SimpleNamespace(getPaneTab=lambda: None)
+VIEWPORT = SimpleNamespace(getPaneTab=lambda: None, isDisplayReferred=lambda: False)
 
 
 def _local_encoders():
@@ -223,3 +225,43 @@ def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch, codec):
                            (folder / "grey.v001.mov").as_posix()], capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, timeout=60).stdout
     assert "DinoWrite: srgb transfer" in tags
+
+
+def test_auto_viewport_flipbook_is_encoded_as_recorded(settings, sequence, tools):
+    """Without beauty pass the EXR already has the viewer's display transform: no OCIO/LUT again"""
+    assert settings["advanced"]["color_transform"] == "auto"
+    job = _run(_job(settings, sequence, display_referred=True))
+    assert job.succeeded
+    assert len(tools.launched) == 1, "no hoiiotool"
+    encode = " ".join(tools.launched[0].cmds[0])
+    assert "lutrgb" not in encode
+    assert "shot.v001.%04d.exr" in encode
+
+
+def test_auto_beauty_pass_flipbook_uses_ocio(settings, sequence, tools):
+    job = _job(settings, sequence, display_referred=False)
+    assert job.color_transform == "ocio" and job.ocio_commands
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg in PATH")
+def test_real_ffmpeg_display_referred_values_pass_through(settings, tmp_path, hou, monkeypatch):
+    """Viewport flipbook EXR holds display values: 0.4627 must stay 118/255 in the video (no transfer)"""
+    monkeypatch.setattr(hou, "fps", lambda: 24.0, raising=False)
+    monkeypatch.setattr(hou, "getenv", lambda name, default=None: default)
+    folder = tmp_path / "v001"
+    folder.mkdir()
+    for frame in (1, 2):
+        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=64x32",
+                        "-frames:v", "1", "-vf",
+                        "format=rgb48le,lutrgb=r=0.4627*maxval:g=0.4627*maxval:b=0.4627*maxval,format=gbrpf32le",
+                        "-c:v", "exr", "-compression", "0", (folder / f"vp.v001.{frame:04d}.exr").as_posix()],
+                       check=True, stdin=subprocess.DEVNULL, timeout=60)
+    settings["advanced"]["conversion_delete_input_sequence"] = False
+    viewer = SimpleNamespace(getPaneTab=lambda: None, isDisplayReferred=lambda: True)
+    assert flipbook.convert(settings, viewer, folder / "vp.v001.$F4.exr", "$F4", (1, 2), (64, 32), 1.0, "mov")
+    pixel = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", (folder / "vp.v001.mov").as_posix(),
+                            "-frames:v", "1", "-vf",
+                            "scale=in_color_matrix=bt709:in_range=tv,format=rgb24,crop=1:1:32:16",
+                            "-f", "rawvideo", "-"], check=True, capture_output=True, stdin=subprocess.DEVNULL,
+                           timeout=60).stdout
+    assert all(abs(channel - 118) <= 2 for channel in pixel), list(pixel)

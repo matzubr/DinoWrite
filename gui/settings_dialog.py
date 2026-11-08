@@ -14,7 +14,8 @@ from .resources import ICONS_FOLDER
 from .theme import COLORS
 
 COLOR_TRANSFORMS = (
-    ("ocio", "OCIO display/view (like the viewer)"),
+    ("auto", "Auto: as recorded, OCIO only for beauty pass flipbooks"),
+    ("ocio", "OCIO display/view (for linear beauty pass EXR)"),
     ("srgb", "sRGB transfer"),
     ("gamma22", "Gamma 2.2"),
     ("bt709", "Rec.709 transfer"),
@@ -284,7 +285,7 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.delete_incomplete.setChecked(bool(advanced.get("delete_incomplete_fb")))
         self.true_resolution.setCurrentIndex(max(self.true_resolution.findData(advanced.get("true_resolution", "auto")), 0))
 
-        index = self.color_transform.findData(advanced.get("color_transform", "ocio"))
+        index = self.color_transform.findData(advanced.get("color_transform", "auto"))
         self.color_transform.setCurrentIndex(max(index, 0))
         source_label = LIKE_VIEWER if advanced.get("ocio_source") == "viewer" else LIKE_MPLAY
         self.ocio_display.setCurrentText(advanced.get("ocio_display") or source_label)
@@ -386,7 +387,7 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.ocio_view.blockSignals(False)
 
     def _updateOcioEnabled(self):
-        enabled = self.color_transform.currentData() == "ocio"
+        enabled = self.color_transform.currentData() in ("ocio", "auto")
         for widget in (self.ocio_display, self.ocio_view, self.ocio_input_space, self.ocio_processes,
                        self.oiiotool_path):
             widget.setEnabled(enabled)

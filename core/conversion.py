@@ -18,7 +18,7 @@ import hou
 from . import ffmpeg, helpers, ocio, process
 from .log import log
 
-COLOR_TRANSFORMS = ("ocio", "srgb", "gamma22", "bt709", "none")
+COLOR_TRANSFORMS = ("auto", "ocio", "srgb", "gamma22", "bt709", "none")
 OCIO_TEMP_FOLDER = "_ocio_tmp"
 
 PENDING, OCIO, ENCODE, DONE, FAILED, CANCELLED = "pending", "ocio", "encode", "done", "failed", "cancelled"
@@ -47,7 +47,11 @@ class ConversionJob:
     """Convert a written flipbook sequence to video.
 
     Color (advanced.color_transform):
-        ocio    - OCIO display/view of the viewer via hoiiotool (falls back to srgb if it isn't available/fails)
+        auto    - (default) "none" for regular viewport flipbooks, "ocio" for beauty pass flipbooks:
+                  without "Beauty pass only" Houdini writes the whole viewport as you see it, with the display
+                  transform already applied; only the beauty pass is linear. Transforming display-referred
+                  frames again gives a darker, more contrasty, oversaturated video.
+        ocio    - OCIO display/view via hoiiotool (falls back to srgb if it isn't available/fails)
         srgb, gamma22, bt709 - fixed transfer function for linear EXR
         none    - pass pixel values as is (for display-encoded sequences)
 
@@ -57,7 +61,7 @@ class ConversionJob:
     """
 
     def __init__(self, settings: dict, scene_viewer, sequence: Path, frame_padding: str, frame_range: tuple,
-                 resolution: tuple, pixel_aspect: float, video_ext: str):
+                 resolution: tuple, pixel_aspect: float, video_ext: str, display_referred: bool = True):
         advanced = settings["advanced"]
         self.sequence = Path(sequence)
         self.frame_padding = frame_padding
@@ -80,13 +84,19 @@ class ConversionJob:
         self.codecs = self.converter.codecs() if self.converter.available else []
 
         is_exr = self.sequence.suffix.lower() == ".exr"
-        self.color_transform = advanced.get("color_transform", "ocio") if is_exr else "none"
+        self.color_transform = advanced.get("color_transform", "auto") if is_exr else "none"
         if self.color_transform not in COLOR_TRANSFORMS:
-            log.warning("Unknown color_transform '%s', expected one of: %s. Using srgb",
+            log.warning("Unknown color_transform '%s', expected one of: %s. Using auto",
                         self.color_transform, ", ".join(COLOR_TRANSFORMS))
-            self.color_transform = "srgb"
+            self.color_transform = "auto"
+        if self.color_transform == "auto":
+            self.color_transform = "none" if display_referred else "ocio"
+            log.info("Color: %s (%s flipbook)", self.color_transform,
+                     "viewport, display-referred" if display_referred else "beauty pass, linear")
         self.ocio_commands = []
         self.display = self.view = ""
+        # Display the viewer shows (and display-referred flipbooks are encoded for)
+        self.viewer_display = ocio.displayView(scene_viewer, source="viewer")[0] if is_exr else ""
         if self.color_transform == "ocio":
             self.ocio_commands = self._planOcio(advanced, scene_viewer)
             if not self.ocio_commands:
@@ -249,12 +259,16 @@ class ConversionJob:
         """Written into the video metadata (VLC: Tools -> Media Information -> Comments)"""
         if self.color_transform == "none" and self.ocio_commands:
             return f"DinoWrite: OCIO {self.display} / {self.view}"
+        if self.color_transform == "none":
+            return f"DinoWrite: as recorded (viewer display {self.viewer_display or 'unknown'})"
         return f"DinoWrite: {self.color_transform} transfer"
 
     def colorTrc(self) -> str:
         """Transfer tag of the encoded video, matching how its pixels were encoded"""
         if self.display and self.color_transform == "none" and self.ocio_commands:
             return ocio.displayTransfer(self.display)
+        if self.color_transform == "none":
+            return ocio.displayTransfer(self.viewer_display)
         return {"bt709": "bt709", "gamma22": "gamma22"}.get(self.color_transform, "iec61966-2-1")
 
     def _finish(self, stage: str, error: str = ""):
