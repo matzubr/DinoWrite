@@ -1,3 +1,5 @@
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from re import search
@@ -8,6 +10,7 @@ import webbrowser as wb
 from . import config
 from .core import conversion, helpers
 from .core.log import hmsg, log
+from .core.process import NO_WINDOW
 from .core.viewport import TRUE_RESOLUTION_MODES, HouViewport, fitsResolution
 
 def start(data,kwargs):
@@ -126,18 +129,37 @@ def start(data,kwargs):
 def openResult(open_after: str, video, sequence_folder: Path, write_folder: Path):
     """Open the video in the default player, or the folder with the result.
 
-    open_after: "video" - the converted video if there is one, otherwise the sequence folder
+    open_after: "video" - the converted video if there is one, otherwise the folder
                 "folder" - always the folder
+    The folder is the one above the sequence (vNNN) with vNNN selected: drag it into Nuke to read the sequence.
     """
     if open_after == "video" and video is not None and Path(video).exists():
-        target = Path(video)
-    elif sequence_folder.exists():
-        target = sequence_folder
-    else:
-        target = write_folder
-    log.info("Opening: %s", target)
-    wb.open(target.as_uri())
+        log.info("Opening: %s", video)
+        return openPath(Path(video))
+    if sequence_folder.exists():
+        log.info("Opening: %s", sequence_folder.parent)
+        return openPath(sequence_folder, select=True)
+    log.info("Opening: %s", write_folder)
+    return openPath(write_folder)
 
+
+def openCommand(path: Path, select: bool = False, platform: str = sys.platform):
+    """Command that opens path (or shows it selected in its folder) without waiting for the app"""
+    if platform == "win32":
+        # explorer returns at once; os.startfile/webbrowser wait while the shell starts the player
+        return f'explorer /select,"{path}"' if select else ["explorer", str(path)]
+    if platform == "darwin":
+        return ["open", "-R", str(path)] if select else ["open", str(path)]
+    return ["xdg-open", str(path.parent if select else path)]
+
+
+def openPath(path: Path, select: bool = False):
+    try:
+        subprocess.Popen(openCommand(path, select), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, **NO_WINDOW)
+    except OSError as e:
+        log.warning("Can't open %s: %s", path, e)
+        wb.open((path.parent if select else path).as_uri())
 
 
 def chooseRecorder(viewport, resolution: tuple, mode: str):

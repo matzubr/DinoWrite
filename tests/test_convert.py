@@ -1,6 +1,7 @@
 """Conversion job: color transform selection, parallel OCIO, encoder fallback, cancel and cleanup"""
 import shutil
 import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -170,7 +171,7 @@ def test_convert_blocking_returns_video_path(settings, sequence, tools):
 
 def test_open_result(monkeypatch, tmp_path):
     opened = []
-    monkeypatch.setattr(flipbook.wb, "open", opened.append)
+    monkeypatch.setattr(flipbook, "openPath", lambda path, select=False: opened.append((path, select)))
     video = tmp_path / "v001" / "shot.v001.mov"
     video.parent.mkdir()
     video.touch()
@@ -179,7 +180,16 @@ def test_open_result(monkeypatch, tmp_path):
     flipbook.openResult("folder", video, video.parent, tmp_path)
     flipbook.openResult("video", None, video.parent, tmp_path)
     flipbook.openResult("video", None, tmp_path / "deleted", tmp_path)
-    assert opened == [video.as_uri(), video.parent.as_uri(), video.parent.as_uri(), tmp_path.as_uri()]
+    # folder: the one above vNNN, with vNNN selected (drag into Nuke)
+    assert opened == [(video, False), (video.parent, True), (video.parent, True), (tmp_path, False)]
+
+
+def test_open_command_selects_sequence_folder():
+    folder = Path("C:/preview/shot/v001")
+    assert flipbook.openCommand(folder, select=True, platform="win32") == f'explorer /select,"{folder}"'
+    assert flipbook.openCommand(folder, platform="win32") == ["explorer", str(folder)]
+    assert flipbook.openCommand(folder, select=True, platform="darwin") == ["open", "-R", str(folder)]
+    assert flipbook.openCommand(folder, select=True, platform="linux") == ["xdg-open", str(folder.parent)]
 
 
 
