@@ -28,7 +28,7 @@ def sequence(tmp_path, hou, monkeypatch):
 class FakeFFmpeg:
     calls = []
 
-    def __init__(self, cmd, binary=""):
+    def __init__(self, cmd, binary="", codec="auto"):
         self.available = True
 
     def convert_to_video(self, **kwargs):
@@ -95,9 +95,18 @@ def test_failed_conversion_keeps_sequence(settings, sequence, monkeypatch):
     assert len(list(sequence.parent.glob("*.exr"))) == 3
 
 
+def _local_encoders():
+    from DinoWrite.core import ffmpeg
+    return ffmpeg.availableEncoders(shutil.which("ffmpeg") or "")
+
+
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg in PATH")
-def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch):
-    """Linear 0.18 grey EXR -> video -> decoded pixel must be sRGB 118/255"""
+@pytest.mark.parametrize("codec", ["libx264", "mpeg4", "h264_videotoolbox"])
+def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch, codec):
+    """Linear 0.18 grey EXR -> video -> decoded pixel must be sRGB 118/255 (mpeg4 = what Houdini's hffmpeg has)"""
+    if codec not in _local_encoders():
+        pytest.skip(f"local ffmpeg has no {codec}")
+    settings["advanced"]["video_codec"] = codec
     monkeypatch.setattr(hou, "fps", lambda: 24.0, raising=False)
     monkeypatch.setattr(hou, "getenv", lambda name, default=None: default)
     folder = tmp_path / "v001"

@@ -115,6 +115,11 @@ class SettingsDialog(QDialog):
         self.ocio_display.currentTextChanged.connect(self._updateViews)
         self.color_transform.currentIndexChanged.connect(self._updateOcioEnabled)
 
+        self.video_codec = QComboBox()
+        self.video_codec.setEditable(True)
+        self.video_codec.addItems(["auto"] + list(ffmpeg.CODECS))
+        self.video_codec.setToolTip("auto: the best encoder this ffmpeg has (Houdini's hffmpeg has no libx264),\n"
+                                    "falls back to the next one if it fails")
         self.ffmpeg_path, ffmpeg_row = self._pathRow("Empty: $PDG_FFMPEG, $HFS/bin/hffmpeg, system PATH")
         self.oiiotool_path, oiiotool_row = self._pathRow("Empty: $HFS/bin/hoiiotool, system PATH")
         self.tools_status = QLabel()
@@ -133,6 +138,7 @@ class SettingsDialog(QDialog):
         form.addRow("OCIO display", self.ocio_display)
         form.addRow("OCIO view", self.ocio_view)
         form.addRow("EXR color space", self.ocio_input_space)
+        form.addRow("Video codec", self.video_codec)
         form.addRow("ffmpeg", ffmpeg_row)
         form.addRow("oiiotool", oiiotool_row)
         form.addRow("", self.tools_status)
@@ -157,7 +163,7 @@ class SettingsDialog(QDialog):
         self.ffmpeg_cmd = QPlainTextEdit()
         self.ffmpeg_cmd.setLineWrapMode(QPlainTextEdit.NoWrap)
         hint = QLabel("One option per line. Placeholders: {fps} {start_frame} {input} {resolution} {aspect} "
-                      "{vf} {output}.\nA line whose placeholder is empty is skipped. "
+                      "{vf} {codec} {output}.\nA line whose placeholder is empty is skipped. "
                       "First line 'ffmpeg' is replaced by the found executable.")
         hint.setWordWrap(True)
         layout = QVBoxLayout()
@@ -208,6 +214,7 @@ class SettingsDialog(QDialog):
         self.ocio_view.setCurrentText(advanced.get("ocio_view") or FROM_VIEWER)
         self.ocio_input_space.setCurrentText(advanced.get("ocio_input_space", ocio.DEFAULT_INPUT_SPACE))
         self.ffmpeg_path.setText(advanced.get("ffmpeg_path", ""))
+        self.video_codec.setCurrentText(advanced.get("video_codec", "auto") or "auto")
         self.oiiotool_path.setText(advanced.get("oiiotool_path", ""))
         self.delete_input.setChecked(bool(advanced.get("conversion_delete_input_sequence")))
         self.open_after.setCurrentIndex(max(self.open_after.findData(advanced.get("open_after", "video")), 0))
@@ -242,6 +249,7 @@ class SettingsDialog(QDialog):
         advanced["ocio_view"] = self._ocioValue(self.ocio_view)
         advanced["ocio_input_space"] = self.ocio_input_space.currentText().strip()
         advanced["ffmpeg_path"] = self.ffmpeg_path.text().strip()
+        advanced["video_codec"] = self.video_codec.currentText().strip() or "auto"
         advanced["oiiotool_path"] = self.oiiotool_path.text().strip()
         advanced["conversion_delete_input_sequence"] = self.delete_input.isChecked()
         advanced["open_after"] = self.open_after.currentData()
@@ -300,8 +308,10 @@ class SettingsDialog(QDialog):
     def _updateToolsStatus(self):
         ffmpeg_found = ffmpeg.findFFmpeg(self.ffmpeg_path.text().strip())
         oiiotool_found = ocio.findOiiotool(self.oiiotool_path.text().strip())
+        encoders = ffmpeg.codecCandidates("auto", ffmpeg.availableEncoders(ffmpeg_found)) if ffmpeg_found else []
         self.tools_status.setText(
             f"ffmpeg: {ffmpeg_found or 'NOT FOUND'}\n"
+            f"encoders (auto order): {', '.join(encoders) or 'unknown'}\n"
             f"oiiotool: {oiiotool_found or 'NOT FOUND (OCIO falls back to sRGB)'}\n"
             f"OCIO config: {ocio.configPath() or 'unknown'}")
 

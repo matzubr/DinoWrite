@@ -218,7 +218,8 @@ def convert(settings: dict, viewport, sequence: Path, frame_padding: str, frame_
                     color_transform, ", ".join(COLOR_TRANSFORMS))
         color_transform = "srgb"
 
-    converter = ffmpeg.FFmpeg(cmd=settings["ffmpeg_cmd"], binary=advanced.get("ffmpeg_path", ""))
+    converter = ffmpeg.FFmpeg(cmd=settings["ffmpeg_cmd"], binary=advanced.get("ffmpeg_path", ""),
+                              codec=advanced.get("video_codec", "auto"))
     if not converter.available:
         return None
 

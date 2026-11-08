@@ -1,6 +1,7 @@
 """ffmpeg lookup, command building and video conversion"""
 import shutil
 import string
+import subprocess
 import tempfile
 from os import environ as osenviron
 from pathlib import Path
@@ -65,12 +66,77 @@ def videoFilter(exr_transfer: str = "") -> str:
                 "setparams=color_primaries=bt709:color_trc=iec61966-2-1:colorspace=bt709:range=tv"]
     return ",".join(filters)
 
+# Video encoders, best first. ffmpeg that ships with Houdini (hffmpeg) is built without GPL parts,
+# so it has no libx264: H.264 comes from OS/GPU encoders when they are compiled in, mpeg4 is always there.
+# {bitrate} is filled by videoBitrate() for encoders without a constant quality mode.
+CODECS = {
+    "libx264":           ["-c:v", "libx264", "-crf", "15", "-preset", "slow"],
+    "h264_videotoolbox": ["-c:v", "h264_videotoolbox", "-b:v", "{bitrate}"],
+    "h264_mf":           ["-c:v", "h264_mf", "-b:v", "{bitrate}"],
+    "h264_nvenc":        ["-c:v", "h264_nvenc", "-b:v", "{bitrate}"],
+    "h264_amf":          ["-c:v", "h264_amf", "-b:v", "{bitrate}"],
+    "h264_qsv":          ["-c:v", "h264_qsv", "-b:v", "{bitrate}"],
+    "mpeg4":             ["-c:v", "mpeg4", "-q:v", "2"],
+}
+AUTO_CODECS = tuple(CODECS)
+CODEC_PLACEHOLDER = "{codec}"
+
+_encoders_cache = {}
+
+
+def availableEncoders(binary: str) -> set:
+    """Encoder names compiled into this ffmpeg (cached per executable). Empty set if it can't be asked."""
+    if not binary:
+        return set()
+    if binary not in _encoders_cache:
+        try:
+            output = subprocess.run([binary, "-hide_banner", "-encoders"], capture_output=True, text=True,
+                                    stdin=subprocess.DEVNULL, timeout=30, **process.NO_WINDOW).stdout
+        except (OSError, subprocess.SubprocessError) as e:
+            log.warning("Can't list ffmpeg encoders: %s", e)
+            return set()
+        _encoders_cache[binary] = parseEncoders(output)
+    return _encoders_cache[binary]
+
+
+def parseEncoders(output: str) -> set:
+    """Names from 'ffmpeg -encoders' lines like ' V....D libx264   libx264 H.264 ...'"""
+    names = set()
+    _, separator, table = output.partition("------")  # legend above the separator, encoders below
+    for line in (table if separator else output).splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and len(parts[0]) == 6 and parts[0][0] in "VAS":
+            names.add(parts[1])
+    return names
+
+
+def codecCandidates(setting: str, available: set) -> list:
+    """Encoders to try in order. 'auto': every known encoder this ffmpeg has (all known if unknown)."""
+    if setting and setting != "auto":
+        return [setting]
+    if not available:
+        return list(AUTO_CODECS)
+    return [codec for codec in AUTO_CODECS if codec in available]
+
+
+def videoBitrate(resolution: str, fps: str) -> str:
+    """~0.25 bits per pixel: visually clean preview, e.g. 1920x1080@24 -> 12M, 3840x2160@24 -> 50M"""
+    try:
+        width, height = (int(v) for v in resolution.lower().split("x"))
+        num, _, den = str(fps).partition("/")
+        rate = float(num) / float(den or 1)
+    except ValueError:
+        return "20M"
+    return f"{max(4, round(width * height * rate * 0.25 / 1e6))}M"
+
+
 class FFmpeg:
     """Wrapper around ffmpeg
     """
-    def __init__(self, cmd: list, binary: str = "") -> None:
+    def __init__(self, cmd: list, binary: str = "", codec: str = "auto") -> None:
 
         self.cmdvar = cmd
+        self.codec = codec or "auto"
         self.binary = findFFmpeg(binary)
         self.available = bool(self.binary)
 
@@ -83,12 +149,14 @@ class FFmpeg:
             hmsg("No ffmpeg found (settings, $PDG_FFMPEG, $HFS/bin/hffmpeg, system PATH)\n"
                  "Video conversion skipped, sequence is kept")
 
-    def cmd(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", exr_transfer="") -> list:
+    def cmd(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", exr_transfer="",
+            codec="libx264") -> list:
         """Build ffmpeg argv from template.
 
         Template entry whose placeholder is empty is skipped entirely,
         so optional flags can be switched off from settings.json.
         {vf} is the video filter chain built by videoFilter().
+        {codec} expands to the encoder arguments from CODECS.
         """
 
         if input == "" or output == "":
@@ -103,6 +171,10 @@ class FFmpeg:
                     vf=videoFilter(exr_transfer))
         commands = []
         for key in template:
+            if key.strip() == CODEC_PLACEHOLDER:
+                bitrate = videoBitrate(str(resolution), str(fps))
+                commands += [arg.format(bitrate=bitrate) for arg in CODECS.get(codec, ["-c:v", codec])]
+                continue
             fields = [field for _, field, _, _ in string.Formatter().parse(key) if field]
             if any(str(values.get(field, "")) == "" for field in fields):
                 continue
@@ -115,9 +187,15 @@ class FFmpeg:
 
         return commands
 
+    def usesCodecPlaceholder(self) -> bool:
+        return any(key.strip() == CODEC_PLACEHOLDER for key in (self.cmdvar or []))
+
     def convert_to_video(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="",
                          exr_transfer="", total_frames=0) -> process.Result:
         """Encode image sequence to video with Houdini progress/cancel.
+
+        Tries encoders one by one (see CODECS) until one works: hardware encoders can be compiled in
+        but fail on a machine without that GPU.
 
         Returns:
             process.Result: truthy on success (caller decides about deleting inputs)
@@ -126,15 +204,29 @@ class FFmpeg:
             log.warning("ffmpeg is not available, video conversion skipped")
             return process.Result(error="ffmpeg not found")
 
-        ffmpeg_cmd = self.cmd(fps=fps, resolution=resolution, aspect=aspect, exr_transfer=exr_transfer,
-                            start_frame=start_frame, input=input, output=output)
+        if self.usesCodecPlaceholder():
+            candidates = codecCandidates(self.codec, availableEncoders(self.binary))
+        else:
+            candidates = [None]  # encoder is written in the ffmpeg command itself
+        if not candidates:
+            log.error("ffmpeg has none of the known encoders: %s", ", ".join(CODECS))
+            return process.Result(error="no encoder")
 
-        with tempfile.TemporaryDirectory(prefix="dinowrite_") as temp:
-            progress_file = Path(temp) / "progress.txt"
-            # machine readable progress (frame=N lines) instead of the interactive stats line
-            ffmpeg_cmd[1:1] = ["-nostats", "-progress", progress_file.as_posix()]
-            result = process.run(ffmpeg_cmd, "DinoWrite: encoding video",
-                                 progress=lambda: progressFromFile(progress_file, total_frames))
+        result = process.Result(error="not run")
+        for codec in candidates:
+            ffmpeg_cmd = self.cmd(fps=fps, resolution=resolution, aspect=aspect, exr_transfer=exr_transfer,
+                                  start_frame=start_frame, input=input, output=output, codec=codec)
+            with tempfile.TemporaryDirectory(prefix="dinowrite_") as temp:
+                progress_file = Path(temp) / "progress.txt"
+                # machine readable progress (frame=N lines) instead of the interactive stats line
+                ffmpeg_cmd[1:1] = ["-nostats", "-progress", progress_file.as_posix()]
+                label = f"DinoWrite: encoding video ({codec})" if codec else "DinoWrite: encoding video"
+                result = process.run(ffmpeg_cmd, label,
+                                     progress=lambda: progressFromFile(progress_file, total_frames))
+            if result or result.cancelled:
+                break
+            if codec:
+                log.warning("Encoder %s failed, trying the next one", codec)
         if result:
             log.info("Video written: %s", output)
         return result

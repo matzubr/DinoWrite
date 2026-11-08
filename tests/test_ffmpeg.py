@@ -63,3 +63,57 @@ def test_ffmpeg_cmd_skips_entry_with_empty_placeholder():
     converter.cmdvar = ["ffmpeg", "-start_number {start_frame}", "-i {input}", "{output}"]
     converter.binary = ""
     assert converter.cmd(start_frame="", input="in.png", output="out.mov") == ["ffmpeg", "-i", "in.png", "out.mov"]
+
+
+ENCODERS_OUTPUT = """Encoders:
+ V..... = Video
+ ------
+ V....D h264_mf              H264 via MediaFoundation (codec h264)
+ V....D h264_nvenc           NVIDIA NVENC H.264 encoder (codec h264)
+ V....D mpeg4                MPEG-4 part 2
+ A....D aac                  AAC (Advanced Audio Coding)
+"""
+
+
+def test_parse_encoders():
+    assert ffmpeg.parseEncoders(ENCODERS_OUTPUT) == {"h264_mf", "h264_nvenc", "mpeg4", "aac"}
+
+
+def test_codec_candidates_for_houdini_ffmpeg_without_libx264():
+    available = ffmpeg.parseEncoders(ENCODERS_OUTPUT)
+    assert ffmpeg.codecCandidates("auto", available) == ["h264_mf", "h264_nvenc", "mpeg4"]
+    assert ffmpeg.codecCandidates("mpeg4", available) == ["mpeg4"]
+    assert ffmpeg.codecCandidates("auto", set()) == list(ffmpeg.AUTO_CODECS)
+
+
+def test_video_bitrate():
+    assert ffmpeg.videoBitrate("1920x1080", "24") == "12M"
+    assert ffmpeg.videoBitrate("3840x2160", "24000/1001") == "50M"
+    assert ffmpeg.videoBitrate("320x240", "24") == "4M"
+
+
+def test_codec_placeholder_expands_to_encoder_args():
+    converter = ffmpeg.FFmpeg.__new__(ffmpeg.FFmpeg)
+    converter.cmdvar = ["ffmpeg", "-i {input}", "{codec}", "{output}"]
+    converter.binary = ""
+    assert converter.cmd(input="in.png", output="out.mov", codec="h264_mf", resolution="1920x1080", fps="24") == \
+        ["ffmpeg", "-i", "in.png", "-c:v", "h264_mf", "-b:v", "12M", "out.mov"]
+
+
+def test_convert_falls_back_to_next_encoder(monkeypatch):
+    from DinoWrite.core import process
+
+    tried = []
+
+    def fake_run(cmd, label, progress=None):
+        codec = cmd[cmd.index("-c:v") + 1]
+        tried.append(codec)
+        return process.Result(returncode=0 if codec == "mpeg4" else 1)
+
+    monkeypatch.setattr(ffmpeg.process, "run", fake_run)
+    monkeypatch.setattr(ffmpeg, "availableEncoders", lambda binary: ffmpeg.parseEncoders(ENCODERS_OUTPUT))
+    converter = ffmpeg.FFmpeg.__new__(ffmpeg.FFmpeg)
+    converter.cmdvar = ["ffmpeg", "-i {input}", "{codec}", "{output}"]
+    converter.binary, converter.available, converter.codec = "hffmpeg", True, "auto"
+    assert converter.convert_to_video(input="in.png", output="out.mov")
+    assert tried == ["h264_mf", "h264_nvenc", "mpeg4"]
