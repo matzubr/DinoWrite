@@ -128,13 +128,38 @@ def test_browse_keeps_name_subfolder(dialog, monkeypatch):
     from DinoWrite.gui import settings_dialog
 
     asked = []
-    monkeypatch.setattr(settings_dialog, "pickFolder", lambda start: asked.append(start) or "$JOB/flipbooks/")
+    monkeypatch.setattr(settings_dialog, "pickFolder", lambda start, parent=None: asked.append(start) or "$JOB/flipbooks/")
     dialog.fb_folder.setText("$HIP/../preview/{name}")
     dialog.browseFolder()
     assert asked == ["$HIP/../preview"] and dialog.fb_folder.text() == "$JOB/flipbooks/{name}"
     dialog.fb_folder.setText("/mnt/previews")
     dialog.browseFolder()
     assert dialog.fb_folder.text() == "$JOB/flipbooks"
-    monkeypatch.setattr(settings_dialog, "pickFolder", lambda start: "")  # cancelled
+    monkeypatch.setattr(settings_dialog, "pickFolder", lambda start, parent=None: "")  # cancelled
     dialog.browseFolder()
     assert dialog.fb_folder.text() == "$JOB/flipbooks"
+
+
+def test_chosen_folder_gets_variables_back(monkeypatch):
+    from DinoWrite.gui import settings_dialog
+
+    roots = {"$HIP": "C:/projects/sh010/houdini", "$JOB": "C:/projects"}
+    monkeypatch.setattr(settings_dialog, "expand", lambda path: roots.get(path, path))
+    assert settings_dialog.withVariables("C:/projects/sh010/preview") == "$JOB/sh010/preview"
+    roots["$JOB"] = "$JOB"  # no $JOB set
+    assert settings_dialog.withVariables("C:/projects/sh010/houdini/flipbooks/") == "$HIP/flipbooks"
+    assert settings_dialog.withVariables("C:/projects/sh010/preview") == "$HIP/../preview"
+    assert settings_dialog.withVariables("D:/elsewhere/very/far") in ("D:/elsewhere/very/far",)
+
+
+def test_open_folder_opens_root_before_name(monkeypatch, tmp_path):
+    from DinoWrite import flipbook
+    from DinoWrite.gui import settings_dialog
+
+    opened = []
+    monkeypatch.setattr(flipbook, "openPath", lambda path, select=False: opened.append(path))
+    monkeypatch.setattr(settings_dialog, "expand", lambda path: path.replace("$HIP", tmp_path.as_posix()))
+    (tmp_path / "preview").mkdir()
+    settings_dialog.openFolder("$HIP/preview/{name}")
+    settings_dialog.openFolder("$HIP/not_yet/{name}")  # doesn't exist yet: the nearest parent
+    assert opened == [tmp_path / "preview", tmp_path]

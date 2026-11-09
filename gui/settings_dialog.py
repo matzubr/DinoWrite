@@ -2,6 +2,7 @@
 import copy
 import posixpath
 import re
+from pathlib import Path
 
 from .. import config
 from ..core import acescg, ffmpeg
@@ -46,18 +47,47 @@ def expand(path: str) -> str:
     return expanded if isinstance(expanded, str) else path
 
 
-def pickFolder(start: str) -> str:
-    """Houdini's file browser (keeps $HIP / $JOB in the path), Qt's when hou can't show it"""
-    try:
-        import hou
+def withVariables(path: str) -> str:
+    """Absolute folder back to $JOB/... or $HIP/... (also $HIP/../.. two levels up) so the setting moves with
+    the project. Unchanged when it isn't under them."""
+    path = path.replace("\\", "/").rstrip("/")
+    for variable in ("$JOB", "$HIP"):
+        root = expand(variable).replace("\\", "/").rstrip("/")
+        if not root or root == variable:
+            continue
+        if path == root or path.startswith(root + "/"):
+            return variable + path[len(root):]
+    hip = expand("$HIP").replace("\\", "/").rstrip("/")
+    if hip and hip != "$HIP":
+        try:
+            relative = posixpath.relpath(path, hip)
+        except ValueError:  # another drive on Windows
+            return path
+        if relative.split("/")[:3].count("..") <= 2 and not relative.startswith("../../.."):
+            return f"$HIP/{relative}"
+    return path
 
-        chosen = hou.ui.selectFile(start_directory=start or None, title="Flipbooks folder",
-                                   file_type=hou.fileType.Directory, chooser_mode=hou.fileChooserMode.Read)
-        if isinstance(chosen, str):
-            return chosen
-    except Exception:  # noqa: BLE001
-        pass
-    return QFileDialog.getExistingDirectory(None, "Flipbooks folder", expand(start)) or ""
+
+def pickFolder(start: str, parent=None) -> str:
+    """Qt folder dialog owned by the settings window (a Houdini dialog would be blocked by it), with
+    $JOB / $HIP put back into the chosen path"""
+    folder = expand(start)
+    while folder and not Path(folder).is_dir() and Path(folder).parent != Path(folder):
+        folder = str(Path(folder).parent)  # the folder may not exist yet: start in its nearest parent
+    chosen = QFileDialog.getExistingDirectory(parent, "Flipbooks folder", folder)
+    return withVariables(chosen) if chosen else ""
+
+
+def openFolder(template: str):
+    """Open the flipbooks folder (the part before {name}), or its nearest existing parent"""
+    from ..flipbook import openPath
+
+    root = template.split("{name}")[0].rstrip("/") or template
+    folder = Path(posixpath.normpath(expand(root).replace("\\", "/")))
+    while not folder.is_dir() and folder.parent != folder:
+        folder = folder.parent
+    log.info("Opening %s", folder)
+    openPath(folder)
 
 
 OBJECT_NAME = "DinoWriteSettings"
@@ -201,14 +231,22 @@ class SettingsDialog(RoundedWindow, QDialog):
         browse.setIcon(QIcon((ICONS_FOLDER / "folder-open.svg").as_posix()))
         browse.setFixedSize(QSize(28, 28))
         browse.setCursor(Qt.PointingHandCursor)
-        browse.setToolTip("Choose the folder (Houdini file browser: keeps $HIP / $JOB)")
+        browse.setToolTip("Choose the folder ($JOB / $HIP are put back into the path)")
         browse.clicked.connect(self.browseFolder)
         self.browse_button = browse
+        open_folder = widgets.PushButton("")
+        open_folder.setIcon(QIcon((ICONS_FOLDER / "folder-arrow.svg").as_posix()))
+        open_folder.setFixedSize(QSize(28, 28))
+        open_folder.setCursor(Qt.PointingHandCursor)
+        open_folder.setToolTip("Open the flipbooks folder in the file browser")
+        open_folder.clicked.connect(lambda: openFolder(self.fb_folder.text().strip()))
+        self.open_button = open_folder
         folder_row = QWidget()
         folder_layout = QHBoxLayout(folder_row)
         folder_layout.setContentsMargins(0, 0, 0, 0)
         folder_layout.addWidget(self.fb_folder)
         folder_layout.addWidget(browse)
+        folder_layout.addWidget(open_folder)
 
         self.folder_preview = self._previewLabel()
         self.name_preview = self._previewLabel()
@@ -309,7 +347,7 @@ class SettingsDialog(RoundedWindow, QDialog):
         current = self.fb_folder.text().strip()
         keeps_name = current.rstrip("/").endswith("{name}")
         base = current.rstrip("/")[:-len("{name}")].rstrip("/") if keeps_name else current
-        chosen = pickFolder(base)
+        chosen = pickFolder(base, self)
         if not chosen:
             return
         chosen = chosen.rstrip("/")
