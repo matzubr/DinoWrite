@@ -337,3 +337,22 @@ class HLayout(QHBoxLayout):
         
         for w in widgets:
             self.addWidget(w)
+
+class Reveal(QWidget):
+    """Shows its content cut at its own height: animating the height slides the content out like a blind
+    (a layout would squash the lines into the smaller height instead)"""
+
+    def __init__(self, content: QWidget, parent=None):
+        super().__init__(parent)
+        self.content = content
+        content.setParent(self)
+
+    def sizeHint(self) -> QSize:
+        return self.content.sizeHint()
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.content.setGeometry(0, 0, self.width(), self.content.sizeHint().height())

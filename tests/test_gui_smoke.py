@@ -100,6 +100,7 @@ def test_long_video_status_does_not_widen_window(houdini, hou, monkeypatch):
     import DinoWrite
 
     window = DinoWrite.show({})
+    window.setInfoExpanded(True, animate=False)
     monkeypatch.setattr(window.hou_viewport, "getPaneTab", lambda: SimpleNamespace(qtScreenGeometry=lambda: 1 / 0))
     window.convertvideo.setChecked(True)
     window.updateStatus()
@@ -144,4 +145,34 @@ def test_file_format_shows_colorspace_and_keeps_extension(houdini):
     window.fileformat.setCurrentIndex(window.fileformat.findData("png"))
     assert window.fileFormat() == "png" and window.collectData()["fileformat"] == "png"
     assert "Nuke" in window.fileformat.toolTip()
+    window.close()
+
+
+def test_info_details_slide_out_and_are_remembered(houdini):
+    import DinoWrite
+    from conftest import waitUntil
+
+    window = DinoWrite.show({})
+    assert not window.info_expanded and not window.info_details.isVisible(), "closed by default"
+    closed_height = window.height()
+    window.info_toggle.click()
+    assert waitUntil(lambda: window.info_details.isVisible() and window.height() > closed_height + 40)
+    assert window.collectData()["infoexpanded"] is True
+    window.close()
+
+    window = DinoWrite.show({})
+    assert window.info_expanded, "remembered"
+    window.setInfoExpanded(False, animate=False)
+    window.close()
+
+
+def test_closed_details_show_warnings_on_the_arrow(houdini):
+    import DinoWrite
+
+    window = DinoWrite.show({})
+    window.setInfoExpanded(False, animate=False)
+    window.setInfoWarning("disk", "The flipbook may not fit on the disk", "#ff0000")
+    assert "may not fit" in window.info_toggle.toolTip()
+    window.setInfoWarning("disk")
+    assert "may not fit" not in window.info_toggle.toolTip()
     window.close()

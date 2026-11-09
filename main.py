@@ -37,6 +37,8 @@ CONVERT_VIDEO_DEFAULT = False
 BLACK_BACKGROUND_DEFAULT = True
 OFF_BACKGROUND_IMAGE_DEFAULT = True
 OPEN_WRITE_FOLDER_DEFAULT = True
+INFO_EXPANDED_DEFAULT = False
+INFO_SLIDE_MS = 240
 
 FRAME_RANGES_DROPDOWN_DICT =  { "Global Frame Range":"$FSTART $FEND",
                                 "Playbar Frame Range":"$RFSTART $RFEND",
@@ -174,14 +176,25 @@ class DinoWriter(RoundedWindow, QWidget):
             label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         
         self.dino_paint = dino_paint
-        sequence_layout = widgets.HLayout([self.seqname,dino_paint],align=None)
+        # Arrow: the details (record/video/camera/memory) slide out below the name; remembered, closed by default
+        self.info_toggle = widgets.PushButton("", radius=11)
+        self.info_toggle.setFixedSize(QSize(22, 22))
+        self.info_toggle.setIconSize(QSize(12, 12))
+        self.info_toggle.setCursor(Qt.PointingHandCursor)
+        self.info_toggle.clicked.connect(lambda: self.setInfoExpanded(not self.info_expanded))
+        sequence_layout = widgets.HLayout([self.seqname,dino_paint,self.info_toggle],align=None)
 
         # The flipbook name first, then how it's recorded and encoded, camera and memory/disk
         info_layout.addLayout(sequence_layout)
-        info_layout.addWidget(self.statusline)
-        info_layout.addWidget(self.videoline)
-        info_layout.addWidget(self.cameraname)
-        info_layout.addWidget(self.ramusage)
+        lines = QWidget()
+        details_layout = QVBoxLayout(lines)
+        details_layout.setContentsMargins(0, 0, 0, 0)
+        for line in (self.statusline, self.videoline, self.cameraname, self.ramusage):
+            details_layout.addWidget(line)
+        self.info_details = widgets.Reveal(lines)
+        info_layout.addWidget(self.info_details)
+        self.info_expanded = bool(self.read_data("infoexpanded", INFO_EXPANDED_DEFAULT))
+        self._warnings = {}
 
         ## MAIN SETTINGS
         main_frame = widgets.Frame(background_color=COLORS_PALLETE["grey"])
@@ -355,7 +368,7 @@ class DinoWriter(RoundedWindow, QWidget):
         self.updateResolutions()
         self.updateStatus()
         # Height from the content (fixed width): the title bar mustn't take the spare space
-        self.setFixedHeight(self.sizeHint().height())
+        self.setInfoExpanded(self.info_expanded, animate=False)
         self.show()
         # Window parts come in one after another, once the layout has placed them
         QTimer.singleShot(0, lambda: animation.stagger(self.stagger_parts))
@@ -378,6 +391,76 @@ class DinoWriter(RoundedWindow, QWidget):
 
         return super().eventFilter(source, event)
     
+    # ---------- info details ----------
+
+    def setInfoExpanded(self, expanded: bool, animate: bool = True):
+        """Slide the info details out/in, the window grows/shrinks with them. Remembered for the next time."""
+        self.info_expanded = expanded
+        details = self.info_details
+        target = details.sizeHint().height() if expanded else 0
+        self._updateInfoToggle()
+        if not animate or not self.isVisible():
+            details.setMaximumHeight(target)
+            details.setVisible(expanded)
+            self.setFixedHeight(self.contentHeight())
+            return
+        start = details.height() if details.isVisible() else 0
+        details.setMaximumHeight(start)
+        details.setVisible(True)
+        slide = QVariantAnimation(self)
+        slide.setDuration(INFO_SLIDE_MS)
+        slide.setStartValue(start)
+        slide.setEndValue(target)
+        slide.setEasingCurve(QEasingCurve.OutCubic)
+
+        def step(value):
+            details.setMaximumHeight(int(value))
+            self.setFixedHeight(self.contentHeight())  # layout spacing included
+        slide.valueChanged.connect(step)
+        def done():
+            details.setVisible(self.info_expanded)
+            self.setFixedHeight(self.contentHeight())
+        slide.finished.connect(done)
+        if getattr(self, "_infoSlide", None) is not None:
+            self._infoSlide.stop()
+        self._infoSlide = slide
+        slide.start()
+        try:
+            self.saveState()
+        except OSError as e:
+            log.warning("Can't remember the info state: %s", e)
+
+    def contentHeight(self) -> int:
+        """Window height the layout needs now (the layout is refreshed first: a hidden part must not count)"""
+        # inner layouts first: a frame's layout updates its size hint only on the next event loop otherwise
+        for inner in (self.info_details.parentWidget().layout(), self.layout()):
+            inner.invalidate()
+            inner.activate()
+        return self.layout().sizeHint().height()
+
+    def setInfoWarning(self, key: str, text: str = "", color: str = ""):
+        """A warning in the details: also shown on the arrow while they're closed"""
+        if text:
+            self._warnings[key] = (text, color)
+        else:
+            self._warnings.pop(key, None)
+        self._updateInfoToggle()
+
+    def _updateInfoToggle(self):
+        icon = Icons.get("angle-down2.svg", type="Path")
+        pixmap = QPixmap(icon).transformed(QTransform().rotate(180 if self.info_expanded else 0),
+                                           Qt.SmoothTransformation)
+        self.info_toggle.setIcon(QIcon(pixmap))
+        style = widgets.styles.get("mainbutton")
+        tooltip = "Hide details" if self.info_expanded else "Show details: record, video, camera, memory"
+        if self._warnings and not self.info_expanded:
+            color = COLORS_PALLETE["crimson"] if any(c == COLORS_PALLETE["crimson"] for _, c in
+                                                     self._warnings.values()) else COLORS_PALLETE["orange"]
+            style += f"QPushButton {{ border: 1px solid {color}; background-color: {color}55; }}"
+            tooltip += "\n\n" + "\n".join(text for text, _ in self._warnings.values())
+        self.info_toggle.setStyleSheet(style)
+        self.info_toggle.setToolTip(tooltip)
+
     def updateResolutions(self):
         # Empty/invalid values are left as is, main() reports empty fields
         for line, minimum in ((self.resx, MIN_RESOLUTION_X), (self.resy, MIN_RESOLUTION_Y)):
@@ -402,6 +485,7 @@ class DinoWriter(RoundedWindow, QWidget):
             animation.shake(self.filename)  # the name just became invalid
         self._name_problem = problem
         animation.setTextAnimated(self.statusline, problem or warning or self.recordStatus())
+        self.setInfoWarning("status", problem or warning, status_color)
 
         self.videoline.setExtraToolTip("")
         parts = [f"Video: {self.videoStatus()}" if self.convertvideo.isChecked() else "Video: off"]
@@ -478,7 +562,7 @@ class DinoWriter(RoundedWindow, QWidget):
 
     def updateColorfulLabel(self):
 
-        label =     ["Sequence name: ",COLORS_PALLETE["white"]]
+        label =     ["Sequence: ",COLORS_PALLETE["white"]]
         separator = [".",COLORS_PALLETE["white"]]
         final_list = label
 
@@ -592,6 +676,7 @@ class DinoWriter(RoundedWindow, QWidget):
             color = COLORS_PALLETE["crimson"] if size > free else COLORS_PALLETE["orange"]
             tip = "The flipbook may not fit on the disk: free some space or record fewer frames / smaller"
         self.ramusage.setStyleSheet(f"background-color: transparent; color: {color};")
+        self.setInfoWarning("disk", tip, color)
         self.ramusage.setExtraToolTip(tip)
         animation.setTextAnimated(self.ramusage, f"Memory: {ramtext} · {disk}")
 
@@ -680,6 +765,7 @@ class DinoWriter(RoundedWindow, QWidget):
             "blackbg": self.blackbackground.isChecked(),
             "bgimage": self.offbackgroundimage.isChecked(),
             "openfolder": self.openwritefolder.isChecked(),
+            "infoexpanded": self.info_expanded,
             **self.solaris_kept,  # Solaris: unchecked here, OBJ/SOP keep the user's choice
         }
 
