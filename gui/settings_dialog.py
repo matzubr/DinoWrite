@@ -95,6 +95,7 @@ BODY_NAME = "DinoWriteSettingsBody"
 DIALOG_WIDTH = 620
 LABEL_WIDTH = 140
 SECTION_NAME = "DinoWriteSettingsSection"
+TOOLS = ("ffmpeg", "Encoders", "oiiotool", "PyOpenColorIO")
 TAB_CHECKED_STYLE = """
 QPushButton:checked { background-color: rgba(183, 134, 32, 20%); border: 1px solid #b78620; color: #ffffff; }
 """
@@ -272,16 +273,19 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.open_after = QComboBox()
         for key, label in OPEN_AFTER:
             self.open_after.addItem(label, key)
-        self.tools_status = widgets.Label()
-        # no word wrap: QFormLayout gets the height of a wrapped label wrong and rows overlap
-        self.tools_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.tools_status.setCursor(Qt.IBeamCursor)
-        self.tools_status.setToolTip("ffmpeg path, encoder and the command: advanced.ffmpeg_path, "
-                                     "advanced.video_codec, ffmpeg_cmd in the user settings file")
+        # One row per tool (a multi-line label in a form layout gets a wrong height and rows overlap)
+        self.tool_values = {}
+        for key in TOOLS:
+            value = widgets.ElidedLabel("", size=widgets.MAIN_SIZE - 1)
+            value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            value.setCursor(Qt.IBeamCursor)
+            self.tool_values[key] = value
+        tools_hint = ("ffmpeg path, encoder and the command: advanced.ffmpeg_path, advanced.video_codec, "
+                      "ffmpeg_cmd; oiiotool: advanced.oiiotool_path in the user settings file")
 
         return self._page(
             self._section([("Open result", self.open_after), ("", self.video_audio), ("", self.delete_input)]),
-            self._section([("Found tools", self.tools_status)]))
+            self._section([(key, value) for key, value in self.tool_values.items()], hint=tools_hint))
 
     def _presetsTab(self) -> QWidget:
         self.resolutions = QPlainTextEdit()
@@ -500,14 +504,17 @@ class SettingsDialog(RoundedWindow, QDialog):
             ocio_text = PyOpenColorIO.__version__
         except ImportError:
             ocio_text = "NOT FOUND, EXR stay as recorded"
-        self.tools_status.setText(
-            f"ffmpeg: {ffmpeg_found or 'NOT FOUND, video conversion is skipped'}\n"
-            f"encoders (tried in order): {', '.join(encoders) or 'unknown'}\n"
-            f"oiiotool: {oiiotool_text}\n"
-            f"PyOpenColorIO: {ocio_text}")
-        # the form layout sized this row before the text was set: reserve height for every line
-        lines = self.tools_status.text().count("\n") + 1
-        self.tools_status.setMinimumHeight(self.tools_status.fontMetrics().lineSpacing() * lines + 4)
+        values = {"ffmpeg": ffmpeg_found or "NOT FOUND, video conversion is skipped",
+                  "Encoders": ", ".join(encoders) or "unknown",
+                  "oiiotool": oiiotool_text,
+                  "PyOpenColorIO": ocio_text}
+        for key, text in values.items():
+            self.tool_values[key].setText(text)
+            found = not text.startswith("NOT FOUND")
+            self.tool_values[key].setStyleSheet(f"background: transparent; color: {'#dddddd' if found else COLORS['crimson']};")
+
+    def toolsText(self) -> str:
+        return "\n".join(f"{key}: {label.text()}" for key, label in self.tool_values.items())
 
     # ---------- buttons ----------
 
