@@ -49,6 +49,7 @@
         "exr_acescg": true,
         "exr_compression": "dwaa",
         "ldr_matte_paint": true,
+        "ldr_colorspace": "auto",
         "video_audio": true,
         "oiiotool_path": "",
         "delete_incomplete_fb":false,

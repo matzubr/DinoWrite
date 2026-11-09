@@ -60,6 +60,9 @@ def ocio_viewer(monkeypatch, hou):
     monkeypatch.setattr(hou, "Color", SimpleNamespace(ocio_spaces=lambda: ("ACEScg", "Linear Rec.709 (sRGB)"),
                                                       ocio_configPath=lambda: "config.ocio"), raising=False)
     monkeypatch.setattr(acescg, "findOiiotool", lambda custom="": "hoiiotool")
+    monkeypatch.setattr(acescg, "configInfo", lambda config_path=None: dict(
+        name="cg-config-v2.1.0_aces-v1.3_ocio-v2.3", ocio=(2, 3), matte_paint="ACEScct", acescct="ACEScct",
+        srgb_texture="sRGB - Texture"))
     monkeypatch.setattr(acescg, "bakeTransform",
                         lambda config, display, view, ctf, **kwargs: Path(ctf).write_text("ctf"))
     return SimpleNamespace(usingOCIO=lambda: True, getOCIODisplay=lambda: "Rec.1886 Rec.709 - Display",
@@ -332,7 +335,8 @@ def test_read_colorspace_for_nuke(ocio_viewer):
     assert acescg.readColorspace("exr", ocio_viewer, acescg_on=False)[0] == "Linear Rec.709"
     assert acescg.readColorspace("exr", ocio_viewer, keeps_exr=False)[0] == "temporary"
     name, how = acescg.readColorspace("png", ocio_viewer)
-    assert name == "matte_paint" and "Rec.1886 Rec.709 - Display" in how
+    assert name == "ACEScct" and "Rec.1886 Rec.709 - Display" in how and "matte_paint" in how
+    assert acescg.readColorspace("png", ocio_viewer, ldr_setting="srgb_texture")[0] == "sRGB - Texture"
     assert acescg.readColorspace("png", ocio_viewer, matte_on=False)[0] == "ACES 1.0 - SDR Video"
     assert acescg.readColorspace("png", ocio_viewer, keeps_exr=False)[0] == "temporary"
     no_ocio = SimpleNamespace(usingOCIO=lambda: False)
@@ -354,13 +358,13 @@ def test_png_converted_to_matte_paint_after_the_video(settings, sequence, tools,
     settings["advanced"]["conversion_delete_input_sequence"] = False
     png = _pngSequence(sequence)
     job = _run(_acescgJob(settings, png, ocio_viewer, convert_video=True))
-    assert job.succeeded and baked == [{"target": "matte_paint", "linearized": False}], "screen pixels, no sRGB step"
+    assert job.succeeded and baked == [{"target": "ACEScct", "linearized": False}], "screen pixels, no sRGB step"
     encode, convert, *_ = tools.launched
     assert "-c:v" in encode.cmds[0], "video first, from the recorded PNG"
     cmd = convert.cmds[0]
-    assert cmd[cmd.index("oiio:ColorSpace") + 1] == "matte_paint"
+    assert cmd[cmd.index("oiio:ColorSpace") + 1] == "ACEScct"
     assert cmd[cmd.index("-d") + 1] == "uint8" and "--compression" not in cmd
-    assert job.exrLabel() == "PNG -> matte_paint"
+    assert job.exrLabel() == "PNG -> ACEScct"
     assert (png.parent / "shot.v001.1005.png").read_text() == "acescg", "originals replaced"
 
 
@@ -386,7 +390,9 @@ def test_baked_matte_paint_transform_round_trips_in_nuke(tmp_path):
     from DinoWrite.core import acescg
     config = "ocio://cg-config-v2.1.0_aces-v1.3_ocio-v2.3"
     display, view = "sRGB - Display", "ACES 1.0 - SDR Video"
-    ctf = acescg.bakeTransform(config, display, view, tmp_path / "t.ctf", target="matte_paint", linearized=False)
+    target = acescg.ldrColorspace("auto", config)[0]
+    assert target == "ACEScct"
+    ctf = acescg.bakeTransform(config, display, view, tmp_path / "t.ctf", target=target, linearized=False)
     cfg = OCIO.Config.CreateFromFile(config)
     screen = [0.05, 0.05, 0.05, 0.5, 0.4, 0.3, 0.95, 0.95, 0.95]
     stored = cfg.getProcessor(OCIO.FileTransform(src=str(ctf))).getDefaultCPUProcessor().applyRGB(list(screen))
@@ -394,3 +400,23 @@ def test_baked_matte_paint_transform_round_trips_in_nuke(tmp_path):
     nuke = cfg.getProcessor("matte_paint", display, view, OCIO.TRANSFORM_DIR_FORWARD).getDefaultCPUProcessor()
     back = nuke.applyRGB(list(stored))
     assert all(abs(a - b) < 3 / 255 for a, b in zip(back, screen)), back
+
+
+def test_ldr_colorspace_detected_from_the_config(monkeypatch):
+    """matte_paint role of the config; without it, by the config's OCIO version; or chosen by hand"""
+    pytest.importorskip("PyOpenColorIO")
+    from DinoWrite.core import acescg
+    assert acescg.ldrColorspace("auto", "ocio://cg-config-v1.0.0_aces-v1.3_ocio-v2.1")[0] == "sRGB - Texture"
+    assert acescg.ldrColorspace("auto", "ocio://cg-config-v2.2.0_aces-v1.3_ocio-v2.4")[0] == "ACEScct"
+    assert acescg.ldrColorspace("srgb_texture", "ocio://cg-config-v2.2.0_aces-v1.3_ocio-v2.4")[0] == \
+        "sRGB Encoded Rec.709 (sRGB)", "the config's own name for sRGB - Texture"
+
+    base = dict(name="studio", matte_paint="", acescct="ACEScct", srgb_texture="sRGB - Texture")
+    monkeypatch.setattr(acescg, "configInfo", lambda path=None: dict(base, ocio=(2, 1)))
+    target, why = acescg.ldrColorspace("auto")
+    assert target == "sRGB - Texture" and "OCIO version 2.1" in why
+    monkeypatch.setattr(acescg, "configInfo", lambda path=None: dict(base, ocio=(2, 4)))
+    assert acescg.ldrColorspace("auto")[0] == "ACEScct"
+    monkeypatch.setattr(acescg, "configInfo", lambda path=None: {})
+    assert acescg.ldrColorspace("auto")[0] == ""
+    assert acescg.ldrColorspace("acescct")[0] == "ACEScct"

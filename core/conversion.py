@@ -78,12 +78,19 @@ class ConversionJob:
             (is_exr and advanced.get("exr_acescg", True)) or (is_ldr and advanced.get("ldr_matte_paint", True)))
         self._exr_dir = tempfile.TemporaryDirectory(prefix="dinowrite_exr_") if (is_exr or is_ldr) else None
         ctf = Path(self._exr_dir.name) / acescg.CTF_NAME if self._exr_dir else None
-        display_view = acescg.plan(scene_viewer, ctf, self.ext) if recolor else None
+        self.target_colorspace, why = acescg.ACESCG_NAME, ""
+        if recolor and is_ldr:
+            self.target_colorspace, why = acescg.ldrColorspace(advanced.get("ldr_colorspace", "auto"))
+            if not self.target_colorspace:
+                log.warning("%s kept as recorded: %s", self.ext.upper(), why)
+                recolor = False
+        display_view = acescg.plan(scene_viewer, ctf, self.ext,
+                                   self.target_colorspace if is_ldr else acescg.ACESCG) if recolor else None
         self.acescg = bool(display_view) and is_exr
         self.matte_paint = bool(display_view) and is_ldr
-        self.target_colorspace = acescg.MATTE_PAINT if is_ldr else acescg.ACESCG_NAME
         if display_view:
-            log.info("%s -> %s: inverse of '%s' / '%s'", self.ext.upper(), self.target_colorspace, *display_view)
+            log.info("%s -> %s%s: inverse of '%s' / '%s'", self.ext.upper(), self.target_colorspace,
+                     f" ({why})" if why else "", *display_view)
 
         scene_audio = audio.sceneAudio() if convert_video and advanced.get("video_audio", True) else None
         self.passport = passport.collect(camera, self.frame_range, resolution,
@@ -264,7 +271,7 @@ class ConversionJob:
     def exrLabel(self) -> str:
         """EXR -> ACEScg, DWAA / PNG -> matte_paint"""
         if self.ext != "exr":
-            return f"{self.ext.upper()} -> {acescg.MATTE_PAINT}"
+            return f"{self.ext.upper()} -> {self.target_colorspace}"
         parts = (["ACEScg"] if self.acescg else []) + [self.compression.split(":")[0].upper()]
         return "EXR -> " + ", ".join(parts)
 

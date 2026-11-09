@@ -119,7 +119,7 @@ the viewport as seen.
 
 The File Format menu shows the colorspace each format is written in, the tooltip says how to read it in Nuke:
 `exr (ACEScg)`, `exr (Linear Rec.709)` when ACEScg is off or not possible, `exr (temporary)` when the sequence is
-deleted after the video, `png`/`jpg (matte_paint)`: converted for Nuke (below), `png`/`jpg (<viewer view>)` when that
+deleted after the video, `png`/`jpg (ACEScct)` or `(sRGB - Texture)`: converted to Nuke's matte_paint (below), `png`/`jpg (<viewer view>)` when that
 is off or not possible: the viewport look as is (e.g. `ACES 1.0 - SDR Video`), `sRGB` without OCIO.
 
 - **Video** is encoded from the recorded EXR with the sRGB curve (like "EXR Transfer Func" of the FFmpeg Encode Video
@@ -138,6 +138,11 @@ is off or not possible: the viewport look as is (e.g. `ACES 1.0 - SDR Video`), `
   `matte_paint` is ACEScct: highlights are kept, the error is about 1/255. In older configs (cg-config v1, Nuke's
   `aces_1.2`) it's sRGB - Texture, which can't hold anything brighter than scene 1.0: the brightest parts come out
   greyish. Other image viewers show the files flat, use the video there.
+  - **Which colorspace** (`advanced.ldr_colorspace`, Settings → General → PNG/JPG colorspace): `auto` takes the
+    `matte_paint` role of Houdini's OCIO config; a config without that role is judged by its OCIO version
+    (2.3+, i.e. cg-config v2.1 and newer: ACEScct, older: sRGB - Texture). The detected one is shown in the menu and
+    in the File Format list (`png (ACEScct)`). If Nuke uses another config than Houdini, look at what its Read node
+    shows as `matte_paint (...)` and choose `acescct` or `srgb_texture` by hand.
 
 - **EXR compression** (`advanced.exr_compression`: `dwaa` default, `zip`, `piz`, `none`): applied in the same
   hoiiotool pass, also when ACEScg is off or not possible.

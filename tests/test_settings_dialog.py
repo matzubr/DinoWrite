@@ -45,9 +45,11 @@ def test_acescg_option_is_saved(dialog, tmp_path):
     assert dialog.exr_acescg.isChecked() and dialog.ldr_matte_paint.isChecked()
     dialog.exr_acescg.setChecked(False)
     dialog.ldr_matte_paint.setChecked(False)
+    assert not dialog.ldr_colorspace.isEnabled()
+    dialog.ldr_colorspace.setCurrentIndex(dialog.ldr_colorspace.findData("srgb_texture"))
     dialog.save()
     stored = json.loads((tmp_path / "user_settings.json").read_text())
-    assert stored == {"advanced": {"exr_acescg": False, "ldr_matte_paint": False}}
+    assert stored == {"advanced": {"exr_acescg": False, "ldr_matte_paint": False, "ldr_colorspace": "srgb_texture"}}
 
 
 def test_compression_and_audio_options_are_saved(dialog, tmp_path):

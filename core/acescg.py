@@ -19,6 +19,8 @@ Nuke reads 8-bit files as by default, so they look right with no Read node chang
 pixels already (no sRGB curve step). In the ACES 1.3 configs since cg-config v2.1 matte_paint is ACEScct
 (log: keeps the highlights, error ~1/255); older ones (cg-config v1, Nuke's aces_1.2) use sRGB - Texture,
 which can't hold anything brighter than scene 1.0: the brightest parts come out greyish in Nuke.
+The target is detected from Houdini's config (ldrColorspace): its matte_paint role, or by the config's
+OCIO version when it has no such role. Nuke with another config: choose ACEScct / sRGB - Texture in Settings.
 """
 import os
 import re
@@ -38,6 +40,12 @@ ACESCG_NAME = "ACEScg"
 MATTE_PAINT = "matte_paint"  # OCIO role: Nuke's default colorspace for 8-bit files
 CTF_NAME = "screen_to_acescg.ctf"
 LDR_EXTS = ("png", "jpg", "jpeg")
+# advanced.ldr_colorspace -> alias every ACES cg/studio config has ("auto": detected)
+LDR_COLORSPACES = {"acescct": "acescct_ap1", "srgb_texture": "srgb_tx"}
+LDR_FALLBACK_NAMES = {"acescct": "ACEScct", "srgb_texture": "sRGB - Texture"}
+MATTE_PAINT_ACESCCT_SINCE = (2, 3)  # cg-config v2.1 (an OCIO 2.3 config) moved matte_paint to ACEScct
+
+_config_cache = {}
 
 _version_cache = {}
 
@@ -101,8 +109,51 @@ def viewerDisplayView(scene_viewer) -> tuple:
     return "", ""
 
 
+def configInfo(config_path: str = None) -> dict:
+    """{name, ocio: (2, 3), matte_paint, acescct, srgb_texture} of an OCIO config ({} when PyOpenColorIO
+    can't read it). Colorspace values are the config's own names, "" when it doesn't have them."""
+    key = configPath() if config_path is None else config_path
+    if key not in _config_cache:
+        try:
+            import PyOpenColorIO as OCIO  # ships with Houdini
+
+            config = OCIO.Config.CreateFromFile(key) if key else OCIO.GetCurrentConfig()
+
+            def spaceName(name):
+                space = config.getColorSpace(name)
+                return space.getName() if space else ""
+
+            info = dict(name=config.getName() or Path(key).name, ocio=(config.getMajorVersion(), config.getMinorVersion()),
+                        matte_paint=spaceName(MATTE_PAINT) if config.hasRole(MATTE_PAINT) else "",
+                        **{key_: spaceName(alias) for key_, alias in LDR_COLORSPACES.items()})
+        except Exception as e:  # noqa: BLE001 - no PyOpenColorIO, unreadable config
+            log.warning("Can't read the OCIO config %s: %s", key, e)
+            info = {}
+        _config_cache[key] = info
+    return _config_cache[key]
+
+
+def ldrColorspace(setting: str = "auto", config_path: str = None) -> tuple:
+    """(colorspace PNG/JPG are converted to, why) for advanced.ldr_colorspace; ("", why) when it can't be done
+
+    auto: the matte_paint role of Houdini's config (what Nuke reads 8-bit files as, when it uses the same
+          config); a config without that role: by its OCIO version, ACEScct since 2.3 (cg-config v2.1)
+    """
+    info = configInfo(config_path)
+    if setting in LDR_COLORSPACES:
+        return info.get(setting) or LDR_FALLBACK_NAMES[setting], "chosen in Settings"
+    if not info:
+        return "", "can't read the OCIO config (PyOpenColorIO)"
+    if info["matte_paint"]:
+        return info["matte_paint"], f"matte_paint of {info['name']}"
+    version = ".".join(map(str, info["ocio"]))
+    key = "acescct" if tuple(info["ocio"]) >= MATTE_PAINT_ACESCCT_SINCE else "srgb_texture"
+    return (info[key] or LDR_FALLBACK_NAMES[key],
+            f"{info['name']} has no matte_paint role: chosen by its OCIO version {version}")
+
+
 def readColorspace(ext: str, scene_viewer, acescg_on: bool = True, keeps_exr: bool = True,
-                   matte_on: bool = True) -> tuple:
+                   matte_on: bool = True, ldr_setting: str = "auto") -> tuple:
     """(short name, how to read it in Nuke) of the colorspace a flipbook file is written in"""
     display, view = viewerDisplayView(scene_viewer)
     shown = f"{display} / {view}" if display else "sRGB"
@@ -115,10 +166,11 @@ def readColorspace(ext: str, scene_viewer, acescg_on: bool = True, keeps_exr: bo
         return "Linear Rec.709", ("As recorded: the viewport look linearized with the inverse sRGB curve.\n"
                                   "Nuke: Read colorspace 'Linear Rec.709 (sRGB)', viewer sRGB without tone mapping\n"
                                   "(Un-tone-mapped / Raw): looks like the Houdini viewport")
-    if display and matte_on and configHasSpaces():
-        return MATTE_PAINT, (f"Converted after recording to the OCIO role matte_paint: Nuke's default for 8-bit files.\n"
-                             f"Nuke: Read as is, viewer {shown}: looks like the Houdini viewport.\n"
-                             "Other image viewers show it flat (ACEScct) or too bright (sRGB - Texture): use the video")
+    target, why = ldrColorspace(ldr_setting) if display and matte_on and configHasSpaces() else ("", "")
+    if target:
+        return target, (f"Converted after recording to {target} ({why}):\nNuke reads 8-bit files as matte_paint by "
+                        f"default. Nuke: Read as is (matte_paint = {target}),\nviewer {shown}: looks like the "
+                        "Houdini viewport. Other image viewers show it flat: use the video")
     if display:
         return view, (f"The viewport look as is ({shown} already applied).\nNuke: Read with the inverse of this "
                       f"display/view (e.g. '{view} ({display})' in the colorspace menu),\nor Raw with a Raw viewer")
@@ -215,8 +267,8 @@ def commands(tool: str, input_pattern: str, output_pattern: str, frame_range: tu
             for part in splitFrames(start, end, count)]
 
 
-def plan(scene_viewer, ctf_path: Path, ext: str = "exr"):
-    """Bake the transform of a kept sequence to ctf_path: EXR -> ACEScg, PNG/JPG -> matte_paint.
+def plan(scene_viewer, ctf_path: Path, ext: str = "exr", target: str = ACESCG):
+    """Bake the transform of a kept sequence to ctf_path: EXR -> ACEScg, PNG/JPG -> target (see ldrColorspace).
     Returns (display, view) or None when it isn't possible (logged)"""
     kind = ext.upper()
     display, view = viewerDisplayView(scene_viewer)
@@ -228,8 +280,8 @@ def plan(scene_viewer, ctf_path: Path, ext: str = "exr"):
         return None
     ldr = ext.lower() in LDR_EXTS
     try:
-        bakeTransform(configPath(), display, view, ctf_path, target=MATTE_PAINT if ldr else ACESCG, linearized=not ldr)
-    except Exception as e:  # noqa: BLE001 - no PyOpenColorIO, unknown display/view, no matte_paint role...
+        bakeTransform(configPath(), display, view, ctf_path, target=target, linearized=not ldr)
+    except Exception as e:  # noqa: BLE001 - no PyOpenColorIO, unknown display/view, unknown target...
         log.warning("%s colors kept as recorded: can't build the OCIO transform: %s", kind, e)
         return None
     return display, view
