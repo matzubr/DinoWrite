@@ -318,3 +318,15 @@ def test_parse_oiiotool_version():
     from DinoWrite.core import acescg
     assert acescg.parseVersion("oiiotool OpenImageIO 2.5.16.0 http://www.openimageio.org") == (2, 5, 16, 0)
     assert acescg.parseVersion("") == ()
+
+
+def test_read_colorspace_for_nuke(ocio_viewer):
+    from DinoWrite.core import acescg
+    assert acescg.readColorspace("exr", ocio_viewer)[0] == "ACEScg"
+    assert acescg.readColorspace("exr", ocio_viewer, acescg_on=False)[0] == "Linear Rec.709"
+    assert acescg.readColorspace("exr", ocio_viewer, keeps_exr=False)[0] == "temporary"
+    name, how = acescg.readColorspace("png", ocio_viewer)
+    assert name == "ACES 1.0 - SDR Video" and "Rec.1886 Rec.709 - Display" in how
+    no_ocio = SimpleNamespace(usingOCIO=lambda: False)
+    assert acescg.readColorspace("jpg", no_ocio)[0] == "sRGB"
+    assert acescg.readColorspace("exr", no_ocio)[0] == "Linear Rec.709"

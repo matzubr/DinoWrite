@@ -93,6 +93,25 @@ def viewerDisplayView(scene_viewer) -> tuple:
     return "", ""
 
 
+def readColorspace(ext: str, scene_viewer, acescg_on: bool = True, keeps_exr: bool = True) -> tuple:
+    """(short name, how to read it in Nuke) of the colorspace a flipbook file is written in"""
+    display, view = viewerDisplayView(scene_viewer)
+    shown = f"{display} / {view}" if display else "sRGB"
+    if ext == "exr":
+        if not keeps_exr:
+            return "temporary", "Only for the video: the EXR are deleted after conversion"
+        if acescg_on and display and configHasSpaces():
+            return ACESCG_NAME, (f"Converted to ACEScg after recording.\nNuke: Read colorspace ACEScg (the default "
+                                 f"for EXR with an ACES config), viewer {shown}: looks like the Houdini viewport")
+        return "Linear Rec.709", ("As recorded: the viewport look linearized with the inverse sRGB curve.\n"
+                                  "Nuke: Read colorspace 'Linear Rec.709 (sRGB)', viewer sRGB without tone mapping\n"
+                                  "(Un-tone-mapped / Raw): looks like the Houdini viewport")
+    if display:
+        return view, (f"The viewport look as is ({shown} already applied).\nNuke: Read with the inverse of this "
+                      f"display/view (e.g. '{view} ({display})' in the colorspace menu),\nor Raw with a Raw viewer")
+    return "sRGB", "The viewport look as is, sRGB.\nNuke: Read colorspace sRGB, or Raw with a Raw viewer"
+
+
 def bakeTransform(config_path: str, display: str, view: str, ctf_path: Path) -> Path:
     """Write sRGB curve + inverse display/view -> ACEScg as one exact .ctf (raises on failure)"""
     import PyOpenColorIO as OCIO  # ships with Houdini
