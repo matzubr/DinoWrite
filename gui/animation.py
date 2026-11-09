@@ -329,23 +329,37 @@ def setTextAnimated(label, text: str):
 
 
 def _keyframes(widget, name: str, duration: int, offsets, curve=QEasingCurve.Linear):
-    """pos animation through offsets (QPoint) from the widget position, back to it at the end"""
-    # While another move runs the widget is off its place: keep the place it started from
-    origin = getattr(widget, "_anim_origin", None)
-    if origin is None or not any(_running(widget, kind) for kind in ("shake", "hop")):
-        origin = widget._anim_origin = widget.pos()
+    """Move the widget through offsets (QPoint) from its place and back.
+
+    When the layout moves the widget meanwhile (the dino, when a longer name pushes it), that's its new
+    place: the move goes on from there and ends there, not where it started.
+    """
+    moving = any(_running(widget, kind) for kind in ("shake", "hop"))
     for kind in ("shake", "hop"):
-        if kind != name and _running(widget, kind):
+        if _running(widget, kind):
             getattr(widget, f"_anim_{kind}").stop()
-    move = QPropertyAnimation(widget, b"pos", widget)
+    if not moving or getattr(widget, "_anim_home", None) is None:
+        widget._anim_home = widget.pos()
+        widget._anim_last = widget.pos()  # a layout move before the first frame counts too
+
+    def apply(offset):
+        position = widget.pos()
+        if position != widget._anim_last:
+            widget._anim_home = position  # placed by the layout since the last frame
+        widget._anim_last = widget._anim_home + offset
+        widget.move(widget._anim_last)
+
+    move = QVariantAnimation(widget)
     move.setObjectName(name)
     move.setDuration(duration)
     move.setEasingCurve(curve)
-    move.setStartValue(origin)
+    move.setStartValue(QPoint(0, 0))
     count = len(offsets) + 1
     for index, offset in enumerate(offsets, 1):
-        move.setKeyValueAt(index / count, origin + offset)
-    move.setEndValue(origin)
+        move.setKeyValueAt(index / count, offset)
+    move.setEndValue(QPoint(0, 0))
+    move.valueChanged.connect(apply)
+    move.finished.connect(lambda: apply(QPoint(0, 0)))
     _keep(widget, move)
 
 

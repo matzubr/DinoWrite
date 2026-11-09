@@ -88,3 +88,29 @@ def test_checkbox_flashes_on_toggle_not_on_open(houdini):
     box.setChecked(True)
     assert waitUntil(lambda: box.flash > 0)
     assert waitUntil(lambda: box.flash == 0.0)
+
+
+def test_hop_ends_where_the_layout_moved_the_widget(houdini):
+    """A longer name pushes the dino right while it hops: it lands at the new place, not the old one"""
+    from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
+
+    from DinoWrite.gui import animation
+
+    parent = QWidget()
+    layout = QHBoxLayout(parent)
+    name, dino = QLabel("short"), QLabel("dino")
+    layout.addWidget(name)
+    layout.addWidget(dino)
+    layout.addStretch()
+    parent.resize(400, 60)
+    parent.show()
+    waitUntil(lambda: dino.x() > 0)
+    animation.hop(dino)
+    name.setText("a much much longer flipbook name")
+    assert waitUntil(lambda: not animation._running(dino, "hop"))
+    assert dino.x() >= name.geometry().right(), "doesn't stay over the name"
+    layout.invalidate()
+    layout.activate()
+    placed = dino.pos()
+    assert waitUntil(lambda: dino.pos() == placed)
+    parent.close()
