@@ -242,6 +242,8 @@ class DinoWriter(RoundedWindow, QWidget):
         label_fileformat = widgets.HBLabel("File Format")
         self.fileformat =  widgets.ComboBox(self.formats["pic_exts"],item=self.read_data("fileformat", FILE_FORMAT_DEFAULT))
 
+        for index in range(self.fileformat.count()):
+            self.fileformat.setItemData(index, self.fileformat.itemText(index))  # the extension; text gets the colorspace
         grid_layout.addWidget(label_fileformat, 3, 0)
         grid_layout.addWidget(self.fileformat, 3, 1,1,3)
 
@@ -343,6 +345,8 @@ class DinoWriter(RoundedWindow, QWidget):
         self.convertvideo.stateChanged.connect(self.updateStatus)
         self.fileformat.currentIndexChanged.connect(self.updateStatus)
         self.fileformat.currentIndexChanged.connect(self.updateRamUsage)
+        self.fileformat.currentIndexChanged.connect(
+            lambda: self.fileformat.setToolTip(self.fileformat.currentData(Qt.ToolTipRole) or ""))
 
         # SCRIPTS
         self.updateRamUsage()
@@ -403,7 +407,7 @@ class DinoWriter(RoundedWindow, QWidget):
         parts = [f"Video: {self.videoStatus()}" if self.convertvideo.isChecked() else "Video: off"]
         advanced = self.settings["advanced"]
         keeps_exr = not (self.convertvideo.isChecked() and advanced.get("conversion_delete_input_sequence"))
-        if self.fileformat.currentText() == "exr" and keeps_exr:
+        if self.fileFormat() == "exr" and keeps_exr:
             exr = (["ACEScg"] if advanced.get("exr_acescg", True) else []) + [
                 acescg.compressionArg(advanced.get("exr_compression", "dwaa")).split(":")[0].upper()]
             parts.append("EXR: " + ", ".join(exr))
@@ -447,13 +451,30 @@ class DinoWriter(RoundedWindow, QWidget):
         self.videoline.setExtraToolTip("EXR is encoded with the sRGB curve: the video looks like MPlay after recording")
         return "sRGB (like MPlay)"
 
+    def fileFormat(self) -> str:
+        """Selected extension (the item text also shows the colorspace)"""
+        return self.fileformat.currentData() or self.fileformat.currentText().split()[0]
+
     def updateFileFormat(self):
         state = self.convertvideo.isChecked()
         if state:
-            self.fileformat.setCurrentText("exr")
+            self.fileformat.setCurrentIndex(max(self.fileformat.findData("exr"), 0))
             self.fileformat.setDisabled(True)
         else:
             self.fileformat.setDisabled(False)
+        self.updateFormatColorspaces()
+
+    def updateFormatColorspaces(self):
+        """'exr (ACEScg)', 'png (ACES 1.0 - SDR Video)': how to read the files in Nuke (details in the tooltip)"""
+        advanced = self.settings["advanced"]
+        keeps_exr = not (self.convertvideo.isChecked() and advanced.get("conversion_delete_input_sequence"))
+        viewer = getattr(self.hou_viewport, "getPaneTab", lambda: None)()
+        for index in range(self.fileformat.count()):
+            ext = self.fileformat.itemData(index)
+            name, how = acescg.readColorspace(ext, viewer, advanced.get("exr_acescg", True), keeps_exr)
+            self.fileformat.setItemText(index, f"{ext}  ({name})")
+            self.fileformat.setItemData(index, how, Qt.ToolTipRole)
+        self.fileformat.setToolTip(self.fileformat.currentData(Qt.ToolTipRole) or "")
 
     def updateColorfulLabel(self):
 
@@ -466,7 +487,7 @@ class DinoWriter(RoundedWindow, QWidget):
         for name in fb_name.split("."):
             part = name.format(name=self.filename.text(),
                                 version=version,
-                                fileformat=self.fileformat.currentText())
+                                fileformat=self.fileFormat())
             
             if name == "{name}":
                 final_list.append(part)
@@ -555,7 +576,7 @@ class DinoWriter(RoundedWindow, QWidget):
         if None in (resx, resy, frame_start, frame_end):
             return None, free
         frames = max(int(frame_end - frame_start) + 1, 1)
-        per_pixel = DISK_BYTES_PER_PIXEL.get(self.fileformat.currentText(), DISK_BYTES_PER_PIXEL["exr"])
+        per_pixel = DISK_BYTES_PER_PIXEL.get(self.fileFormat(), DISK_BYTES_PER_PIXEL["exr"])
         return resx * resy * per_pixel * frames, free
 
     def updateRamUsage(self):
@@ -654,7 +675,7 @@ class DinoWriter(RoundedWindow, QWidget):
             "aspect": self.hou_viewport.cameraPixelAspect(),
             "framestart": self.framestart.text(),
             "frameend": self.frameend.text(),
-            "fileformat": self.fileformat.currentText(),
+            "fileformat": self.fileFormat(),
             "convertvideo": self.convertvideo.isChecked(),
             "blackbg": self.blackbackground.isChecked(),
             "bgimage": self.offbackgroundimage.isChecked(),

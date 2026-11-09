@@ -115,6 +115,11 @@ A viewport flipbook stores the viewport image as you see it (OCIO display/view, 
 applied), linearized with the inverse sRGB curve. "Beauty pass only" is switched off while recording, so it's always
 the viewport as seen.
 
+The File Format menu shows the colorspace each format is written in, the tooltip says how to read it in Nuke:
+`exr (ACEScg)`, `exr (Linear Rec.709)` when ACEScg is off or not possible, `exr (temporary)` when the sequence is
+deleted after the video, `png`/`jpg (<viewer view>)`: the viewport look as is (e.g. `ACES 1.0 - SDR Video`), `sRGB`
+without OCIO.
+
 - **Video** is encoded from the recorded EXR with the sRGB curve (like "EXR Transfer Func" of the FFmpeg Encode Video
   TOP): it looks like MPlay right after recording. JPG/PNG are encoded as is. Tagged BT.709 / sRGB.
 - **EXR → ACEScg** (`advanced.exr_acescg`, on by default, Settings → General): the kept EXR are converted back to

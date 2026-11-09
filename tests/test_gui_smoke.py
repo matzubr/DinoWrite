@@ -132,3 +132,16 @@ def test_solaris_greys_out_background_options(houdini, monkeypatch):
     assert set(window.solaris_kept) == {"blackbg", "bgimage"}
     assert data["blackbg"] == window.solaris_kept["blackbg"]  # the saved OBJ choice isn't overwritten
     window.close()
+
+
+def test_file_format_shows_colorspace_and_keeps_extension(houdini):
+    import DinoWrite
+
+    window = DinoWrite.show({})
+    window.convertvideo.setChecked(False)
+    texts = [window.fileformat.itemText(i) for i in range(window.fileformat.count())]
+    assert all("(" in text for text in texts), texts
+    window.fileformat.setCurrentIndex(window.fileformat.findData("png"))
+    assert window.fileFormat() == "png" and window.collectData()["fileformat"] == "png"
+    assert "Nuke" in window.fileformat.toolTip()
+    window.close()
