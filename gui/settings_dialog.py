@@ -285,7 +285,7 @@ class SettingsDialog(RoundedWindow, QDialog):
                            ("Video extension", self.fb_video_ext)]),
             self._section([("Record viewer", self.true_resolution), ("", self.delete_incomplete)]),
             self._section([("EXR compression", self.exr_compression), ("", self.exr_acescg),
-                           ("", self.ldr_matte_paint), ("PNG/JPG colorspace", self.ldr_colorspace)]))
+                           ("", self.ldr_matte_paint), ("PNG/JPG colors", self.ldr_colorspace)]))
 
     def _videoTab(self) -> QWidget:
         self.delete_input = widgets.CheckBox("Delete image sequence after successful conversion")

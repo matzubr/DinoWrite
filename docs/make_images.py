@@ -69,12 +69,16 @@ def fakeHoudini(temp: Path):
 
     viewer = types.SimpleNamespace(cameraName=lambda: "shotCam", cameraPixelAspect=lambda: 1.0,
                                    cameraResolution=lambda: (3840, 2160), cameraAspect=lambda: 16 / 9,
+                                   viewportSize=lambda: (1712, 963),
                                    getPaneTab=lambda: types.SimpleNamespace(qtScreenGeometry=lambda: 1 / 0))
     viewport.HouViewport.__init__ = lambda self, kwargs: self.__dict__.update(viewer.__dict__)
     ffmpeg.findFFmpeg = lambda custom="": "$HFS/bin/hffmpeg"
     ffmpeg.availableEncoders = lambda binary: {"h264_mf", "h264_nvenc", "mpeg4"}
     acescg.findOiiotool = lambda custom="": "$HFS/bin/hoiiotool"
     acescg.oiiotoolVersion = lambda tool: ()
+    acescg.configInfo = lambda config_path=None: dict(
+        name="cg-config-v2.2.0_aces-v1.3_ocio-v2.4", ocio=(2, 4), matte_paint="ACEScct", acescct="ACEScct",
+        srgb_texture="sRGB - Texture")
     helpers.freeSpace = lambda path: 512 * 1024 ** 3
     return main_window
 
@@ -162,7 +166,11 @@ def main():
 
         from DinoWrite.gui import settings_dialog
         settings_dialog.expand = lambda path: path.replace("$HIP", "C:/projects/sh010/houdini")  # not the temp folder
+        from DinoWrite import config as dinowrite_config
+        real_path = dinowrite_config.userSettingsPath
+        dinowrite_config.userSettingsPath = lambda: Path(f"{PREF_DIR}/DinoWrite/settings.json")  # shown, not the temp
         dialog = SettingsDialog()
+        dinowrite_config.userSettingsPath = real_path
         stopFade(dialog)
         dialog.show()
         QTest.qWait(700)
