@@ -208,8 +208,7 @@ def test_menus_preview_what_they_set(houdini, hou, monkeypatch):
     assert texts["Camera Resolution"] == "Camera Resolution  (3840×2160)"
     assert texts["Viewport Resolution"] == "Viewport Resolution  (1712×963)"
     assert texts["1/2"] == "1/2  (960×540)" and texts["×3"] == "×3  (5760×3240)"
-    icons = [a.data() for a in window.res_menu.menu.actions() if not a.icon().isNull()]
-    assert icons == ["1/2", "2/3"], "the knife dino on every dividing item"
+    assert window.res_menu.menu.items == {"1/2", "2/3", "×2", "×3"}, "one knife dino next to all the scales"
 
     by_item = {a.data(): a for a in window.res_menu.menu.actions() if a.data()}
     by_item["×2"].trigger()

@@ -46,8 +46,7 @@ FRAME_RANGES_DROPDOWN_DICT =  { "Global Frame Range":"$FSTART $FEND",
 FRAME_RANGES_COMPLETER_LIST = ['$F','$FSTART','$FEND','$RFSTART','$RFEND']
 RESOLUTION_SCALES = {"1/2": 1 / 2, "2/3": 2 / 3, "×2": 2, "×3": 3}  # of the resolution in the fields
 RESOLUTION_DROPDOWN_LIST =    ["Camera Resolution","Viewport Resolution","---",*RESOLUTION_SCALES,"---"]
-RESOLUTION_ICONS = {"1/2": "dino_knife_cut.svg", "2/3": "dino_knife_cut.svg"}
-MENU_ICON_SIZE = 28
+RESOLUTION_SIDE_IMAGE = ("dino_knife_cut.svg", tuple(RESOLUTION_SCALES))  # one big knife dino next to the scales
 LTR = "\u200e"  # menus are right-to-left (icons on the right): keeps "(...)" previews in place
 
 
@@ -230,7 +229,7 @@ class DinoWriter(RoundedWindow, QWidget):
 
         self.res_menu = widgets.DropDownButton(
             menu=RESOLUTION_DROPDOWN_LIST + self.addresolution, callback=self.setMenuItemResolution,
-            icons=RESOLUTION_ICONS, icon_size=MENU_ICON_SIZE, labeler=self.resolutionMenuText)
+            side_image=RESOLUTION_SIDE_IMAGE, labeler=self.resolutionMenuText)
 
         grid_layout.addWidget(label_res, 1, 0)
         grid_layout.addWidget(self.resx, 1, 1)

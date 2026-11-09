@@ -205,7 +205,7 @@ class DropDownButton(AnimatedButton, QPushButton):
 
     Each action keeps its menu item in data() (callbacks read self.sender().data()), so the shown text
     can change: labeler(item) -> text is asked every time the menu opens (e.g. "1/2  (960×540)").
-    icons: {item: icon file} shown at icon_size px.
+    side_image: (icon file, [items]): one picture on the right of those items, as tall as all of them.
     """
     def __init__(self,icon:str=None,
                 title:str="",
@@ -213,8 +213,7 @@ class DropDownButton(AnimatedButton, QPushButton):
                 callback:list=None,
                 font:str=MAIN_FONT,
                 size:int=MAIN_SIZE,
-                icons:dict=None,
-                icon_size:int=0,
+                side_image:tuple=None,
                 labeler=None,
                 parent=None) -> QPushButton:
 
@@ -234,11 +233,11 @@ class DropDownButton(AnimatedButton, QPushButton):
         if icon:
             self.setIcon(Icons.get(icon))
 
-        self.menu = QMenu()
+        self.menu = SideImageMenu(*side_image) if side_image else QMenu()
         self.menu.setFont(QFont(font,size))
         style = styles.get("menu")
-        if icon_size:
-            style += f"QMenu{{icon-size:{int(icon_size)}px;}}"
+        if side_image:
+            style += f"QMenu::item{{padding-left:{SideImageMenu.ROOM}px;}}"  # room for the picture (mirrored: the menu is right-to-left)
         self.menu.setStyleSheet(style)
         self.menu.setLayoutDirection(Qt.RightToLeft)
         self.menu.setCursor(Qt.PointingHandCursor)
@@ -248,7 +247,6 @@ class DropDownButton(AnimatedButton, QPushButton):
         if labeler is not None:
             self.menu.aboutToShow.connect(self.relabel)
 
-        icons = icons or {}
         menu = list(menu)
         if len(menu)==0:
             menu.append("No folders found")
@@ -259,9 +257,6 @@ class DropDownButton(AnimatedButton, QPushButton):
                 continue
             action = QAction(action_name,self)
             action.setData(action_name)
-            item_icon = Icons.get(icons[action_name]) if action_name in icons else None
-            if item_icon is not None:
-                action.setIcon(item_icon)
             if action_name!="No folders found":
                 action.triggered.connect(callback)
             self.menu.addAction(action)
@@ -278,6 +273,32 @@ class DropDownButton(AnimatedButton, QPushButton):
                 log.warning("Menu preview for '%s': %s", item, e)
                 text = None
             action.setText(text or item)
+
+class SideImageMenu(QMenu):
+    """Menu with one picture on the right of a group of items, as tall as the group (the knife dino next to
+    1/2, 2/3, ×2, ×3): a menu item icon is limited to one small row."""
+    ROOM = 70  # px kept free on the right of the items
+
+    def __init__(self, image: str, items, parent=None):
+        super().__init__(parent)
+        self.image = QIcon(Icons.get(image, type="Path") or "")
+        self.items = set(items)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        rects = [self.actionGeometry(a) for a in self.actions() if a.data() in self.items and a.isVisible()]
+        if not rects or self.image.isNull():
+            return
+        group = rects[0]
+        for rect in rects[1:]:
+            group = group.united(rect)
+        side = min(group.height() - 4, self.ROOM - 8)
+        area = QRect(group.right() - self.ROOM + (self.ROOM - side) // 2, group.top() + (group.height() - side) // 2,
+                     side, side)
+        painter = QPainter(self)
+        self.image.paint(painter, area)
+        painter.end()
+
 
 class CheckBox(AnimatedCheckBox, QCheckBox):
     """
