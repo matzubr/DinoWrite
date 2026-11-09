@@ -20,7 +20,7 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
  - Status line shows how the flipbook will be recorded and encoded, flipbook name is checked while typing.
    The details slide out with the arrow next to the sequence name (closed by default, remembered); while they're
    closed, a warning (stretched aspect, not enough disk space) colors the arrow
- - Opens the result when done: the converted video or the folder
+ - Opens the result when done: the converted video and its folder (with the video selected), or only one of them
  - Settings dialog behind the gear button, your settings survive tool updates
  - Remembers last used values
  - Animations in the HotBox style: windows fade in/out, window parts come in one after another; on hover a white

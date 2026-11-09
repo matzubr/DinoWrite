@@ -109,7 +109,7 @@ def start(data,kwargs):
 
     def finished(video, cancelled=False):
         if data.get("openfolder") and not cancelled:
-            openResult(advanced.get("open_after", "video"), video, sequence_folder, write_folder)
+            openResult(advanced.get("open_after", "video_folder"), video, sequence_folder, write_folder)
 
     if not files_keeped:
         return finished(None)
@@ -135,11 +135,14 @@ def start(data,kwargs):
 def openResult(open_after: str, video, sequence_folder: Path, write_folder: Path):
     """Open the video in the default player, or the folder with the result.
 
-    open_after: "video" - the converted video if there is one, otherwise the folder
+    open_after: "video_folder" - the converted video, plus its folder with the video selected
+                "video" - the converted video if there is one, otherwise the folder
                 "folder" - always the folder
     The folder is the one above the sequence (vNNN) with vNNN selected: drag it into Nuke to read the sequence.
     """
-    if open_after == "video" and video is not None and Path(video).exists():
+    if open_after in ("video", "video_folder") and video is not None and Path(video).exists():
+        if open_after == "video_folder":
+            openPath(Path(video), select=True)  # first, so the player opens on top of the folder
         log.info("Opening: %s", video)
         return openPath(Path(video))
     if sequence_folder.exists():

@@ -166,6 +166,11 @@ def test_open_result(monkeypatch, tmp_path):
     # folder: the one above vNNN, with vNNN selected (drag into Nuke)
     assert opened == [(video, False), (video.parent, True), (video.parent, True), (tmp_path, False)]
 
+    opened.clear()
+    flipbook.openResult("video_folder", video, video.parent, tmp_path)
+    flipbook.openResult("video_folder", None, video.parent, tmp_path)
+    assert opened == [(video, True), (video, False), (video.parent, True)]  # folder with the video selected
+
 
 def test_open_command_selects_sequence_folder():
     folder = Path("C:/preview/shot/v001")

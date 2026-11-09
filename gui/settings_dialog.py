@@ -21,6 +21,7 @@ TRUE_RESOLUTION = (
     ("off", "Maximized viewport (Houdini scales to the resolution)"),
 )
 OPEN_AFTER = (
+    ("video_folder", "Converted video and its folder"),
     ("video", "Converted video (or the folder without conversion)"),
     ("folder", "Folder with the sequence"),
 )
@@ -428,7 +429,7 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.true_resolution.setCurrentIndex(max(self.true_resolution.findData(advanced.get("true_resolution", "auto")), 0))
 
         self.delete_input.setChecked(bool(advanced.get("conversion_delete_input_sequence")))
-        self.open_after.setCurrentIndex(max(self.open_after.findData(advanced.get("open_after", "video")), 0))
+        self.open_after.setCurrentIndex(max(self.open_after.findData(advanced.get("open_after", "video_folder")), 0))
 
         self.resolutions.setPlainText("\n".join(settings.get("custom_resolution", [])))
         self.frame_ranges.setPlainText("\n".join(
