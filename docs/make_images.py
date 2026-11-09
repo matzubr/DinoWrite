@@ -154,10 +154,10 @@ def main():
         dialog = SettingsDialog()
         stopFade(dialog)
         dialog.show()
-        app.processEvents()
+        QTest.qWait(700)
         onBackground(dialog).save((DOCS / "settings.png").as_posix())
-        dialog.findChild(QtWidgets.QTabWidget).setCurrentIndex(1)
-        QTest.qWait(600)  # the page fades in
+        dialog.showPage(1)
+        QTest.qWait(700)  # the page's sections come in
         onBackground(dialog).save((DOCS / "settings_video.png").as_posix())
         dialog.close()
 
