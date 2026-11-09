@@ -168,12 +168,10 @@ class DinoWriter(RoundedWindow, QWidget):
         self.seqname = widgets.ColorfulLabel()
         dino_paint = widgets.HIcon(Icons.get("label_dino_paint.svg",type="Path"),size=50)
         
-        self.cameraname.setCursor(Qt.IBeamCursor)
-        self.cameraname.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.ramusage.setCursor(Qt.IBeamCursor)
-        self.ramusage.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.seqname.setCursor(Qt.IBeamCursor)
-        self.seqname.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # Every info line can be selected and copied (paths, names, sizes)
+        for label in (self.cameraname, self.ramusage, self.statusline, self.videoline, self.seqname):
+            label.setCursor(Qt.IBeamCursor)
+            label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         
         self.dino_paint = dino_paint
         sequence_layout = widgets.HLayout([self.seqname,dino_paint],align=None)
