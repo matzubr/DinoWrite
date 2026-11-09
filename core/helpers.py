@@ -1,5 +1,6 @@
 """Pure helpers: versioning, frame/number parsing. No Qt here, only hou."""
 import re
+import shutil
 from pathlib import Path
 
 import hou
@@ -83,3 +84,24 @@ def flipbookVersion(fb_folder_template: str, flipbook_name: str) -> str:
         return "v001"
     fb_folder = Path(hou.text.expandString(fb_folder_template).format(name=flipbook_name)).resolve()
     return nextVersion(fb_folder)
+
+
+def formatBytes(size: float) -> str:
+    """1536 -> '1.5 KB', 3.2e9 -> '3.0 GB'"""
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(size) < 1024:
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+def freeSpace(path) -> "int | None":
+    """Free bytes on the disk of path (the nearest existing parent: the folder may not exist yet)"""
+    folder = Path(path)
+    for candidate in (folder, *folder.parents):
+        if candidate.exists():
+            try:
+                return shutil.disk_usage(candidate).free
+            except OSError:
+                return None
+    return None

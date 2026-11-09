@@ -11,7 +11,7 @@ def test_main_window_builds_with_qt6(houdini):
     assert window.isVisible()
     assert window.parent() is houdini
     assert window.filename.text() == "flipbook"
-    assert window.ramusage.text().startswith("RAM Usage:")
+    assert window.ramusage.text().startswith("Memory: RAM ")
 
     # second call focuses existing window instead of opening a duplicate
     DinoWrite.show({})
@@ -28,7 +28,7 @@ def test_main_window_survives_bad_field_values(houdini):
     window.updateResolutions()
     window.framestart.setText("$BAD")
     window.updateRamUsage()
-    assert window.ramusage.text() == "RAM Usage: -"
+    assert window.ramusage.text().startswith("Memory: RAM - · Disk -")
     window.close()
 
 

@@ -50,3 +50,11 @@ def test_name_problem():
     assert helpers.nameProblem("  ") == "Name is empty"
     assert helpers.nameProblem("my shot/fx") == "Not allowed in name: space /"
     assert "dot" in helpers.nameProblem(".hidden")
+
+
+def test_format_bytes_and_free_space(tmp_path):
+    from DinoWrite.core import helpers
+    assert helpers.formatBytes(512) == "512 B"
+    assert helpers.formatBytes(1536) == "1.5 KB"
+    assert helpers.formatBytes(3 * 1024 ** 3) == "3.0 GB"
+    assert helpers.freeSpace(tmp_path / "not" / "yet") == helpers.freeSpace(tmp_path) > 0

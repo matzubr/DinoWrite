@@ -46,6 +46,9 @@ RESOLUTION_DROPDOWN_LIST =    ["Camera Resolution","1/2","2/3","---"]
 
 
 BYTES_TOLERANCE = 1024
+# Flipbook frames on disk per pixel (rough, while recording): Houdini's EXR RGBA half, PNG, JPG
+DISK_BYTES_PER_PIXEL = {"exr": 5.0, "png": 3.0, "jpg": 0.5}
+DISK_WARNING_SHARE = 0.8  # orange above 80% of the free space, red when it doesn't fit
 
 # IMPORTs
 from pathlib import Path
@@ -158,7 +161,7 @@ class DinoWriter(RoundedWindow, QWidget):
         info_layout.setContentsMargins(10,5,10,5)
 
         self.cameraname = widgets.Label("Camera: {camera}".format(camera=self.hou_viewport.cameraName()))
-        self.ramusage =   widgets.Label("RAM Usage: {ramusage}")
+        self.ramusage =   widgets.ElidedLabel("RAM Usage: {ramusage}")
         # Elided labels: long status text must not widen the fixed size window
         self.statusline = widgets.ElidedLabel("")
         self.videoline = widgets.ElidedLabel("")
@@ -172,13 +175,15 @@ class DinoWriter(RoundedWindow, QWidget):
         self.seqname.setCursor(Qt.IBeamCursor)
         self.seqname.setTextInteractionFlags(Qt.TextSelectableByMouse)
         
+        self.dino_paint = dino_paint
         sequence_layout = widgets.HLayout([self.seqname,dino_paint],align=None)
 
-        info_layout.addWidget(self.cameraname)
-        info_layout.addWidget(self.ramusage)
+        # The flipbook name first, then how it's recorded and encoded, camera and memory/disk
+        info_layout.addLayout(sequence_layout)
         info_layout.addWidget(self.statusline)
         info_layout.addWidget(self.videoline)
-        info_layout.addLayout(sequence_layout)
+        info_layout.addWidget(self.cameraname)
+        info_layout.addWidget(self.ramusage)
 
         ## MAIN SETTINGS
         main_frame = widgets.Frame(background_color=COLORS_PALLETE["grey"])
@@ -244,16 +249,18 @@ class DinoWriter(RoundedWindow, QWidget):
 
         ## CHECKBOXES
         checkbox_frame = widgets.Frame(background_color=COLORS_PALLETE["grey"])
-        checkbox_layout = QVBoxLayout(checkbox_frame)
+        checkbox_layout = QGridLayout(checkbox_frame)
+        checkbox_layout.setContentsMargins(8, 6, 8, 6)
+        checkbox_layout.setHorizontalSpacing(12)
 
         self.convertvideo =       widgets.CheckBox(
             "Convert to video",self.read_data("convertvideo", CONVERT_VIDEO_DEFAULT))
         convertvideo_icon = widgets.HIcon(Icons.get("clapperboard.svg",type="Path"),size=15)
         self.blackbackground =    widgets.CheckBox(
-            "Switch to black background", self.read_data("blackbg", BLACK_BACKGROUND_DEFAULT))
+            "Black background", self.read_data("blackbg", BLACK_BACKGROUND_DEFAULT))
         blackbackground_icon = widgets.HIcon(Icons.get("circle-half-stroke.svg",type="Path"),size=15)
         self.offbackgroundimage = widgets.CheckBox(
-            "Off Background Image",self.read_data("bgimage", OFF_BACKGROUND_IMAGE_DEFAULT))
+            "Hide BG image",self.read_data("bgimage", OFF_BACKGROUND_IMAGE_DEFAULT))
         offbackgroundimage_icon = widgets.HIcon(Icons.get("eye-slash.svg",type="Path"),size=15)
         self.openwritefolder =    widgets.CheckBox(
             "Open result",self.read_data("openfolder", OPEN_WRITE_FOLDER_DEFAULT))
@@ -283,10 +290,11 @@ class DinoWriter(RoundedWindow, QWidget):
         offbackgroundimage_layout = widgets.HLayout([self.offbackgroundimage,offbackgroundimage_icon])
         openwritefolder_layout =    widgets.HLayout([self.openwritefolder,openwritefolder_icon])
 
-        checkbox_layout.addLayout(convertvideo_layout)
-        checkbox_layout.addLayout(blackbackground_layout)
-        checkbox_layout.addLayout(offbackgroundimage_layout)
-        checkbox_layout.addLayout(openwritefolder_layout)
+        # 2x2: what happens after recording on the left, the viewer during recording on the right
+        checkbox_layout.addLayout(convertvideo_layout, 0, 0)
+        checkbox_layout.addLayout(openwritefolder_layout, 1, 0)
+        checkbox_layout.addLayout(blackbackground_layout, 0, 1)
+        checkbox_layout.addLayout(offbackgroundimage_layout, 1, 1)
         
         ### MAIN BUTTON
         self.writebutton = widgets.PushButton("WRITE ", default=True,size=widgets.MAIN_SIZE+4)
@@ -302,10 +310,12 @@ class DinoWriter(RoundedWindow, QWidget):
         MAIN_LAYOUT.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         MAIN_LAYOUT.setContentsMargins(10,10,10,10)
 
-        MAIN_LAYOUT.addWidget(info_frame)
+        # What to record -> options -> summary of what WRITE will do, right above it
         MAIN_LAYOUT.addWidget(main_frame)
         MAIN_LAYOUT.addWidget(checkbox_frame)
+        MAIN_LAYOUT.addWidget(info_frame)
         MAIN_LAYOUT.addWidget(self.writebutton)
+        self.stagger_parts = [main_frame, checkbox_frame, info_frame, self.writebutton]
 
         TITLE_LAYOUT.addWidget(TitleBar(self, WINDOW_TITLE, title_width=int(WINDOW_WIDTH/1.5),
                                         on_settings=self.openSettings))
@@ -334,6 +344,7 @@ class DinoWriter(RoundedWindow, QWidget):
         self.res_menu.menu.triggered.connect(self.updateStatus)
         self.convertvideo.stateChanged.connect(self.updateStatus)
         self.fileformat.currentIndexChanged.connect(self.updateStatus)
+        self.fileformat.currentIndexChanged.connect(self.updateRamUsage)
 
         # SCRIPTS
         self.updateRamUsage()
@@ -341,7 +352,11 @@ class DinoWriter(RoundedWindow, QWidget):
         self.updateFileFormat()
         self.updateResolutions()
         self.updateStatus()
+        # Height from the content (fixed width): the title bar mustn't take the spare space
+        self.setFixedHeight(self.sizeHint().height())
         self.show()
+        # Window parts come in one after another, once the layout has placed them
+        QTimer.singleShot(0, lambda: animation.stagger(self.stagger_parts))
 
     def eventFilter(self, source , event) -> bool:
         if  event.type() == QEvent.FocusIn or \
@@ -381,7 +396,10 @@ class DinoWriter(RoundedWindow, QWidget):
         self.statusline.setExtraToolTip(
             "Resolution aspect differs from the camera: Houdini stretches the image to it.\n"
             "Use 'Camera Resolution' in the resolution menu (or 1/2, 2/3 of it)." if warning else "")
-        self.statusline.setText(problem or warning or self.recordStatus())
+        if problem and not getattr(self, "_name_problem", ""):
+            animation.shake(self.filename)  # the name just became invalid
+        self._name_problem = problem
+        animation.setTextAnimated(self.statusline, problem or warning or self.recordStatus())
 
         self.videoline.setExtraToolTip("")
         parts = [f"Video: {self.videoStatus()}" if self.convertvideo.isChecked() else "Video: off"]
@@ -391,7 +409,7 @@ class DinoWriter(RoundedWindow, QWidget):
             exr = (["ACEScg"] if advanced.get("exr_acescg", True) else []) + [
                 acescg.compressionArg(advanced.get("exr_compression", "dwaa")).split(":")[0].upper()]
             parts.append("EXR: " + ", ".join(exr))
-        self.videoline.setText(" · ".join(parts))
+        animation.setTextAnimated(self.videoline, " · ".join(parts))
 
     def aspectWarning(self) -> str:
         """Resolution with another aspect than the camera: the flipbook comes out squashed/stretched"""
@@ -468,10 +486,14 @@ class DinoWriter(RoundedWindow, QWidget):
                 final_list.append(name)
                 final_list.append(COLORS_PALLETE["white"])
             final_list+=separator
+        previous = self.seqname.text()
         self.seqname.update(final_list)
+        if previous and self.seqname.text() != previous and self.isVisible():
+            animation.hop(self.dino_paint)  # new name or version
+            animation.refreshText(self.seqname)
 
     def updateCameraLabel(self):
-        self.cameraname.setText(f"Camera: {self.hou_viewport.cameraName()}")
+        animation.setTextAnimated(self.cameraname, f"Camera: {self.hou_viewport.cameraName()}")
 
     def setMenuItemFile(self):
         item = self.sender().text()
@@ -524,15 +546,35 @@ class DinoWriter(RoundedWindow, QWidget):
         mbytes = image_in_mbytes * frame_range
         return mbytes
     
+    def diskUsage(self):
+        """(estimated flipbook size, free space) in bytes; size is None if fields can't be evaluated.
+
+        Peak while recording, before the EXR pass compresses the frames (DWAA makes them several times smaller).
+        """
+        resx, resy = helpers.toInt(self.resx.text()), helpers.toInt(self.resy.text())
+        frame_start, frame_end = helpers.evalFrame(self.framestart.text()), helpers.evalFrame(self.frameend.text())
+        free = helpers.freeSpace(self.flipbooksRoot(self.filename.text()))
+        if None in (resx, resy, frame_start, frame_end):
+            return None, free
+        frames = max(int(frame_end - frame_start) + 1, 1)
+        per_pixel = DISK_BYTES_PER_PIXEL.get(self.fileformat.currentText(), DISK_BYTES_PER_PIXEL["exr"])
+        return resx * resy * per_pixel * frames, free
+
     def updateRamUsage(self):
+        """Memory line: RAM for MPlay, disk for the frames and the free space where they go"""
         ram = self.ramUsage()
-        if ram is None:
-            ramtext = "RAM Usage: -"
-        elif ram<=BYTES_TOLERANCE:
-            ramtext = f"RAM Usage: {ram:.2f} MB"
-        else:
-            ramtext = f"RAM Usage: {ram/BYTES_TOLERANCE :.2f} GB"
-        self.ramusage.setText(ramtext)
+        ramtext = "RAM -" if ram is None else f"RAM {helpers.formatBytes(ram * BYTES_TOLERANCE * BYTES_TOLERANCE)}"
+        size, free = self.diskUsage()
+        disk = "Disk -" if size is None else f"Disk ~{helpers.formatBytes(size)}"
+        if free is not None:
+            disk += f" · {helpers.formatBytes(free)} free"
+        color, tip = "#ffffff", ""
+        if size is not None and free is not None and size > free * DISK_WARNING_SHARE:
+            color = COLORS_PALLETE["crimson"] if size > free else COLORS_PALLETE["orange"]
+            tip = "The flipbook may not fit on the disk: free some space or record fewer frames / smaller"
+        self.ramusage.setStyleSheet(f"background-color: transparent; color: {color};")
+        self.ramusage.setExtraToolTip(tip)
+        animation.setTextAnimated(self.ramusage, f"Memory: {ramtext} · {disk}")
 
     def flipbooksRoot(self, name: str = "") -> Path:
         """Folder that holds all flipbooks: parent of 'paths.fb_folder' for this name"""
