@@ -211,10 +211,10 @@ def test_real_ffmpeg_srgb_encode(settings, tmp_path, hou, monkeypatch, codec):
                             "-f", "rawvideo", "-"], check=True, capture_output=True, stdin=subprocess.DEVNULL,
                            timeout=60).stdout
     assert all(abs(channel - 118) <= 2 for channel in pixel)
-    tags = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags=comment", "-of", "default=nw=1",
+    tags = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags", "-of", "default=nw=1",
                            (folder / "grey.v001.mov").as_posix()], capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, timeout=60).stdout
-    assert "DinoWrite: sRGB" in tags
+    assert "dinowrite_video_color=sRGB" in tags and "dinowrite_frame_range=1001-1002" in tags, "passport kept"
 
 
 
@@ -245,7 +245,7 @@ def test_video_from_recorded_exr_then_acescg(settings, sequence, tools, ocio_vie
 def test_no_acescg_when_sequence_is_deleted_after_video(settings, sequence, tools, ocio_viewer):
     settings["advanced"]["conversion_delete_input_sequence"] = True
     job = _run(_acescgJob(settings, sequence, ocio_viewer, convert_video=True))
-    assert job.succeeded and len(tools.launched) == 1 and not job.acescg_commands
+    assert job.succeeded and len(tools.launched) == 1 and not job.exr_commands
 
 
 def test_acescg_failure_keeps_recorded_exr_and_video(settings, sequence, tools, ocio_viewer):
@@ -257,17 +257,41 @@ def test_acescg_failure_keeps_recorded_exr_and_video(settings, sequence, tools, 
     assert job.video.exists() and not job.temp_folder.exists()
 
 
+def _hasColorTransform(job):
+    return any("--ociofiletransform" in cmd for cmd in job.exr_commands)
+
+
 def test_acescg_skipped_without_ocio_or_transform(settings, sequence, tools, ocio_viewer, monkeypatch):
+    """Colors stay as recorded, the EXR still get compressed and the passport"""
     from DinoWrite.core import acescg
     no_ocio = SimpleNamespace(usingOCIO=lambda: False)
-    assert not _acescgJob(settings, sequence, no_ocio, convert_video=False).hasWork
+    job = _acescgJob(settings, sequence, no_ocio, convert_video=False)
+    assert job.hasWork and not _hasColorTransform(job) and job.exrLabel() == "EXR -> DWAA"
 
     def no_pyocio(*args):
         raise ImportError("No module named 'PyOpenColorIO'")
     monkeypatch.setattr(acescg, "bakeTransform", no_pyocio)
-    assert not _acescgJob(settings, sequence, ocio_viewer, convert_video=False).hasWork
+    assert not _hasColorTransform(_acescgJob(settings, sequence, ocio_viewer, convert_video=False))
     settings["advanced"]["exr_acescg"] = False
-    assert not _acescgJob(settings, sequence, no_ocio, convert_video=False).hasWork
+    assert not _hasColorTransform(_acescgJob(settings, sequence, no_ocio, convert_video=False))
+
+
+def test_exr_pass_compression_and_passport(settings, sequence, tools, ocio_viewer, hou, monkeypatch):
+    monkeypatch.setattr(hou, "hipFile", SimpleNamespace(path=lambda: "/shots/sh010/fx.v012.hip"), raising=False)
+    job = _acescgJob(settings, sequence, ocio_viewer, convert_video=False)
+    cmd = job.exr_commands[0]
+    assert cmd[cmd.index("--compression") + 1] == "dwaa:45"
+    assert cmd[cmd.index("dinowrite:hip") + 1] == "/shots/sh010/fx.v012.hip"
+    assert job.exrLabel() == "EXR -> ACEScg, DWAA"
+    settings["advanced"]["exr_compression"] = "zip"
+    cmd = _acescgJob(settings, sequence, ocio_viewer, convert_video=False).exr_commands[0]
+    assert cmd[cmd.index("--compression") + 1] == "zip"
+
+
+def test_no_exr_pass_without_oiiotool(settings, sequence, tools, ocio_viewer, monkeypatch):
+    from DinoWrite.core import acescg
+    monkeypatch.setattr(acescg, "findOiiotool", lambda custom="": "")
+    assert not _acescgJob(settings, sequence, ocio_viewer, convert_video=False).hasWork
 
 
 def test_baked_transform_inverts_the_viewer_display_view(tmp_path):

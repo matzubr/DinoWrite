@@ -55,7 +55,7 @@ import hou
 import json
 
 from . import config, flipbook
-from .core import helpers
+from .core import acescg, helpers
 from .core.log import hmsg, log
 from .core.viewport import HouViewport
 from .gui import animation, widgets
@@ -387,8 +387,10 @@ class DinoWriter(RoundedWindow, QWidget):
         parts = [f"Video: {self.videoStatus()}" if self.convertvideo.isChecked() else "Video: off"]
         advanced = self.settings["advanced"]
         keeps_exr = not (self.convertvideo.isChecked() and advanced.get("conversion_delete_input_sequence"))
-        if self.fileformat.currentText() == "exr" and advanced.get("exr_acescg", True) and keeps_exr:
-            parts.append("EXR: ACEScg")
+        if self.fileformat.currentText() == "exr" and keeps_exr:
+            exr = (["ACEScg"] if advanced.get("exr_acescg", True) else []) + [
+                acescg.compressionArg(advanced.get("exr_compression", "dwaa")).split(":")[0].upper()]
+            parts.append("EXR: " + ", ".join(exr))
         self.videoline.setText(" · ".join(parts))
 
     def aspectWarning(self) -> str:

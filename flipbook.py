@@ -122,10 +122,11 @@ def start(data,kwargs):
                                    pixel_aspect=float(data.get("aspect") or 1),
                                    video_ext=fb_video_ext,
                                    convert_video=bool(data.get("convertvideo")),
-                                   scene_viewer=viewport.getPaneTab())
+                                   scene_viewer=viewport.getPaneTab(),
+                                   camera=viewport.cameraName())
     if not job.hasWork:
         return finished(None)
-    # Video / ACEScg run in the background: Houdini stays usable, progress/cancel in a small window
+    # Video / EXR pass run in the background: Houdini stays usable, progress/cancel in a small window
     from .gui.job_window import JobWindow
     JobWindow(job, on_finished=lambda: finished(job.video if job.video and job.video.exists() else None,
                                                 cancelled=job.stage == conversion.CANCELLED))

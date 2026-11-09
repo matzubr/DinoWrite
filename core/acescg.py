@@ -1,4 +1,5 @@
-"""Flipbook EXR -> ACEScg, so it opens right in Nuke/comp with an ACES config.
+"""Kept flipbook EXR rewritten by hoiiotool: -> ACEScg (opens right in Nuke/comp with an ACES config),
+DWAA compression and the flipbook passport in the header.
 
 A viewport flipbook EXR is the viewport image as seen (OCIO display/view, e.g. Rec.1886 / ACES SDR,
 already applied), linearized with the inverse sRGB curve. To get scene-linear ACEScg back:
@@ -107,17 +108,30 @@ def bakeTransform(config_path: str, display: str, view: str, ctf_path: Path) -> 
     return Path(ctf_path)
 
 
+COMPRESSION = {"dwaa": "dwaa:45", "zip": "zip", "piz": "piz", "none": "none"}
+
+
+def compressionArg(setting: str) -> str:
+    """advanced.exr_compression -> OpenImageIO compression name (dwaa:45 by default)"""
+    return COMPRESSION.get(str(setting or "dwaa").lower(), COMPRESSION["dwaa"])
+
+
 def command(tool: str, input_pattern: str, output_pattern: str, frame_range: tuple, padding: int,
-            ctf_path: str, threads: int = 0) -> list:
-    """hoiiotool argv for a part of the frame range ('#' in patterns is the frame number)"""
+            ctf_path: str = "", threads: int = 0, compression: str = "dwaa:45", attributes: list = ()) -> list:
+    """hoiiotool argv for a part of the frame range ('#' in patterns is the frame number).
+
+    ctf_path: color transform to ACEScg (empty: colors stay as recorded)
+    attributes: extra '--attrib name value' args (the flipbook passport)
+    """
     start, end = frame_range
     cmd = [tool]
     if threads:
         cmd += ["--threads", str(int(threads))]
-    return cmd + ["--frames", f"{int(start)}-{int(end)}", "--framepadding", str(int(padding)), input_pattern,
-                  "--ociofiletransform", str(ctf_path),
-                  "--attrib", "oiio:ColorSpace", ACESCG_NAME,
-                  "-d", "half", "-o", output_pattern]
+    cmd += ["--frames", f"{int(start)}-{int(end)}", "--framepadding", str(int(padding)), input_pattern]
+    if ctf_path:
+        cmd += ["--ociofiletransform", str(ctf_path), "--attrib", "oiio:ColorSpace", ACESCG_NAME]
+    cmd += list(attributes)
+    return cmd + ["--compression", compression, "-d", "half", "-o", output_pattern]
 
 
 def processCount(frames: int) -> int:
@@ -139,31 +153,27 @@ def splitFrames(start: int, end: int, parts: int) -> list:
 
 
 def commands(tool: str, input_pattern: str, output_pattern: str, frame_range: tuple, padding: int,
-             ctf_path: str) -> list:
+             ctf_path: str = "", compression: str = "dwaa:45", attributes: list = ()) -> list:
     """One hoiiotool command per part of the frame range, to run in parallel"""
     start, end = int(frame_range[0]), int(frame_range[1])
     count = processCount(end - start + 1)
     threads = max(1, (os.cpu_count() or 2) // count)
-    return [command(tool, input_pattern, output_pattern, part, padding, ctf_path, threads)
+    return [command(tool, input_pattern, output_pattern, part, padding, ctf_path, threads, compression, attributes)
             for part in splitFrames(start, end, count)]
 
 
-def plan(scene_viewer, ctf_path: Path, oiiotool_path: str = ""):
-    """Bake the transform to ctf_path. Returns (tool, display, view) or None when it isn't possible (logged)"""
+def plan(scene_viewer, ctf_path: Path):
+    """Bake the ACEScg transform to ctf_path. Returns (display, view) or None when it isn't possible (logged)"""
     display, view = viewerDisplayView(scene_viewer)
     if not display or not view:
-        log.info("EXR kept as recorded: the viewer doesn't use OCIO")
+        log.info("EXR colors kept as recorded: the viewer doesn't use OCIO")
         return None
     if not configHasSpaces():
-        log.warning("EXR kept as recorded: the OCIO config has no ACEScg / Linear Rec.709 (not an ACES config)")
-        return None
-    tool = findOiiotool(oiiotool_path)
-    if not tool:
-        log.warning("EXR kept as recorded: hoiiotool/oiiotool not found")
+        log.warning("EXR colors kept as recorded: the OCIO config has no ACEScg / Linear Rec.709 (not ACES)")
         return None
     try:
         bakeTransform(configPath(), display, view, ctf_path)
     except Exception as e:  # noqa: BLE001 - no PyOpenColorIO, unknown display/view...: keep EXR as is
-        log.warning("EXR kept as recorded: can't build the OCIO transform: %s", e)
+        log.warning("EXR colors kept as recorded: can't build the OCIO transform: %s", e)
         return None
-    return tool, display, view
+    return display, view

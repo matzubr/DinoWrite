@@ -27,16 +27,18 @@
         "-r {fps}",
         "-start_number {start_frame}",
         "-i {input}",
+        "{audio_input}",
         "-vf {vf}",
         "-s {resolution}",
         "-aspect {aspect}",
         "{codec}",
+        "{audio}",
         "-pix_fmt yuv420p",
         "-color_primaries bt709",
         "-color_trc {color_trc}",
         "-colorspace bt709",
         "-color_range tv",
-        "-metadata comment={comment}",
+        "{metadata}",
         "{output}"
     ],
     "advanced":{
@@ -45,6 +47,8 @@
         "ffmpeg_path": "",
         "video_codec": "auto",
         "exr_acescg": true,
+        "exr_compression": "dwaa",
+        "video_audio": true,
         "oiiotool_path": "",
         "delete_incomplete_fb":false,
         "conversion_delete_input_sequence":true

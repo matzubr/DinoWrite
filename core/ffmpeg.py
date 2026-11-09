@@ -142,13 +142,15 @@ class FFmpeg:
                  "Video conversion skipped, sequence is kept")
 
     def cmd(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", srgb=False,
-            codec="libx264", color_trc="iec61966-2-1", comment="") -> list:
+            codec="libx264", color_trc="iec61966-2-1", comment="", audio_input=(), audio=(), metadata=()) -> list:
         """Build ffmpeg argv from template.
 
         Template entry whose placeholder is empty is skipped entirely,
         so optional flags can be switched off from settings.json.
         {vf} is the video filter chain built by videoFilter().
         {codec} expands to the encoder arguments from CODECS.
+        {audio_input}, {audio}, {metadata} expand to argument lists (scene sound input / its mapping and
+        codec / the flipbook passport); a template without them just has no sound or passport.
         """
 
         if input == "" or output == "":
@@ -161,8 +163,12 @@ class FFmpeg:
         values = dict(fps=fps, resolution=resolution, aspect=aspect,
                     start_frame=start_frame, input=input, output=output, color_trc=color_trc, comment=comment,
                     vf=videoFilter(srgb, color_trc))
+        lists = {"{audio_input}": audio_input, "{audio}": audio, "{metadata}": metadata}
         commands = []
         for key in template:
+            if key.strip() in lists:
+                commands += [str(arg) for arg in lists[key.strip()]]
+                continue
             if key.strip() == CODEC_PLACEHOLDER:
                 bitrate = videoBitrate(str(resolution), str(fps))
                 commands += [arg.format(bitrate=bitrate) for arg in CODECS.get(codec, ["-c:v", codec])]

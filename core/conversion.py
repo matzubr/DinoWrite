@@ -1,4 +1,4 @@
-"""After recording: flipbook sequence -> video, EXR -> ACEScg. A pollable job.
+"""After recording: flipbook sequence -> video, kept EXR -> ACEScg / DWAA / passport. A pollable job.
 
 Everything that needs hou (fps, viewer OCIO, tool lookup) is resolved in the constructor, on the main
 thread. Then the job only polls external processes: the GUI calls step() from a QTimer, so Houdini
@@ -8,9 +8,10 @@ Stages (each one optional):
     encode - ffmpeg from the recorded EXR, encoders tried one by one until one works.
              A viewport flipbook EXR is the viewport as seen, linearized with the inverse sRGB curve:
              encoded back with the sRGB curve it looks like MPlay right after recording. JPG/PNG as is.
-    acescg - hoiiotool converts the kept EXR to ACEScg in place with a baked OCIO transform
-             (see core/acescg.py), several processes on parts of the frame range.
-             Skipped when the sequence is deleted after the video.
+             Scene audio (Audio panel file) and the flipbook passport go into the video.
+    exr    - hoiiotool rewrites the kept EXR in place: ACEScg with a baked OCIO transform (see
+             core/acescg.py), DWAA compression, the passport in the header. Several processes on parts
+             of the frame range. Skipped when the sequence is deleted after the video.
 """
 import os
 import shutil
@@ -19,12 +20,12 @@ from pathlib import Path
 
 import hou
 
-from . import acescg, ffmpeg, helpers, process
+from . import acescg, audio, ffmpeg, helpers, passport, process
 from .log import log
 
-PENDING, ENCODE, ACESCG, DONE, FAILED, CANCELLED = "pending", "encode", "acescg", "done", "failed", "cancelled"
+PENDING, ENCODE, EXR, DONE, FAILED, CANCELLED = "pending", "encode", "exr", "done", "failed", "cancelled"
 COLOR_TRC = "iec61966-2-1"  # sRGB
-ACESCG_TEMP_FOLDER = "_acescg_tmp"
+EXR_TEMP_FOLDER = "_dinowrite_tmp"
 
 
 def sequenceFiles(sequence: Path, frame_padding: str) -> list:
@@ -50,11 +51,12 @@ class ConversionJob:
         frame_padding (str): frame token in the file name, like "$F4"
         convert_video (bool): encode the video
         scene_viewer (hou.SceneViewer, optional): the recorded viewer, its OCIO display/view is inverted
+        camera (str): camera name for the passport
     """
 
     def __init__(self, settings: dict, sequence: Path, frame_padding: str, frame_range: tuple,
                  resolution: tuple, pixel_aspect: float, video_ext: str, convert_video: bool = True,
-                 scene_viewer=None):
+                 scene_viewer=None, camera: str = ""):
         advanced = settings["advanced"]
         self.sequence = Path(sequence)
         self.frame_padding = frame_padding
@@ -65,7 +67,22 @@ class ConversionJob:
         self.video = videoPath(self.sequence, frame_padding, video_ext) if convert_video else None
         self.delete_input = convert_video and bool(advanced.get("conversion_delete_input_sequence"))
         is_exr = self.sequence.suffix.lower() == ".exr"
-        self.temp_folder = self.sequence.parent / ACESCG_TEMP_FOLDER
+        self.temp_folder = self.sequence.parent / EXR_TEMP_FOLDER
+        fps = hou.fps()
+
+        self._exr_dir = tempfile.TemporaryDirectory(prefix="dinowrite_exr_") if is_exr else None
+        ctf = Path(self._exr_dir.name) / acescg.CTF_NAME if is_exr else None
+        display_view = None
+        if is_exr and advanced.get("exr_acescg", True) and not self.delete_input:
+            display_view = acescg.plan(scene_viewer, ctf)
+        self.acescg = bool(display_view)
+        if display_view:
+            log.info("EXR -> ACEScg: inverse of '%s' / '%s'", *display_view)
+
+        scene_audio = audio.sceneAudio() if convert_video and advanced.get("video_audio", True) else None
+        self.passport = passport.collect(camera, self.frame_range, resolution,
+                                         display_view or acescg.viewerDisplayView(scene_viewer),
+                                         scene_audio.path if scene_audio else "")
 
         self.encode_values = dict(
             fps=helpers.ffmpegFps(hou.fps()),
@@ -76,29 +93,31 @@ class ConversionJob:
             output=self.video.as_posix() if self.video else "",
             srgb=is_exr,
             color_trc=COLOR_TRC,
-            comment="DinoWrite: sRGB, like MPlay after recording")
+            comment="DinoWrite: sRGB, like MPlay after recording",
+            audio_input=audio.inputArgs(scene_audio, self.frame_range[0], fps) if scene_audio else (),
+            audio=audio.outputArgs() if scene_audio else (),
+            metadata=passport.ffmpegArgs(dict(self.passport, video_color="sRGB, like MPlay after recording"),
+                                         title=self.video.stem if self.video else ""))
+        if scene_audio:
+            log.info("Video with scene audio: %s", scene_audio.path)
         self.converter = self.codecs = None
         if convert_video:
             self.converter = ffmpeg.FFmpeg(cmd=settings["ffmpeg_cmd"], binary=advanced.get("ffmpeg_path", ""),
                                            codec=advanced.get("video_codec", "auto"))
             self.codecs = self.converter.codecs() if self.converter.available else []
 
-        self.acescg_commands = []
-        self._acescg_dir = None
-        if is_exr and advanced.get("exr_acescg", True) and not self.delete_input:
-            self._acescg_dir = tempfile.TemporaryDirectory(prefix="dinowrite_acescg_")
-            ctf = Path(self._acescg_dir.name) / acescg.CTF_NAME
-            planned = acescg.plan(scene_viewer, ctf, advanced.get("oiiotool_path", ""))
-            if planned:
-                tool, display, view = planned
-                log.info("EXR -> ACEScg: inverse of '%s' / '%s'", display, view)
-                pattern = self.sequence.name.replace(frame_padding, "#")
-                self.acescg_commands = acescg.commands(
-                    tool, (self.sequence.parent / pattern).as_posix(), (self.temp_folder / pattern).as_posix(),
-                    self.frame_range, self.padding, ctf.as_posix())
-            else:
-                self._acescg_dir.cleanup()
-                self._acescg_dir = None
+        # Kept EXR: ACEScg, compression, passport in one hoiiotool pass
+        self.exr_commands = []
+        self.compression = acescg.compressionArg(advanced.get("exr_compression", "dwaa"))
+        tool = acescg.findOiiotool(advanced.get("oiiotool_path", "")) if is_exr and not self.delete_input else ""
+        if is_exr and not self.delete_input and not tool:
+            log.warning("EXR kept as recorded: hoiiotool/oiiotool not found")
+        if tool:
+            pattern = self.sequence.name.replace(frame_padding, "#")
+            self.exr_commands = acescg.commands(
+                tool, (self.sequence.parent / pattern).as_posix(), (self.temp_folder / pattern).as_posix(),
+                self.frame_range, self.padding, ctf.as_posix() if self.acescg else "",
+                self.compression, passport.oiiotoolArgs(self.passport))
 
         self.stage = PENDING
         self.error = ""
@@ -110,7 +129,7 @@ class ConversionJob:
 
     @property
     def hasWork(self) -> bool:
-        return self.convert_video or bool(self.acescg_commands)
+        return self.convert_video or bool(self.exr_commands)
 
     @property
     def title(self) -> str:
@@ -124,7 +143,7 @@ class ConversionJob:
     def succeeded(self) -> bool:
         return self.stage == DONE
 
-    def acescgFramesDone(self) -> int:
+    def exrFramesDone(self) -> int:
         return len(list(self.temp_folder.iterdir())) if self.temp_folder.exists() else 0
 
     @property
@@ -133,8 +152,8 @@ class ConversionJob:
         if self.stage == ENCODE and self._progress_dir:
             value = ffmpeg.progressFromFile(Path(self._progress_dir.name) / "progress.txt", self.total_frames)
             return min(value or 0.0, 1.0)
-        if self.stage == ACESCG:
-            return min(self.acescgFramesDone() / max(self.total_frames, 1), 1.0)
+        if self.stage == EXR:
+            return min(self.exrFramesDone() / max(self.total_frames, 1), 1.0)
         return 1.0 if self.finished else 0.0
 
     @property
@@ -142,8 +161,8 @@ class ConversionJob:
         """Human readable current state"""
         if self.stage == ENCODE:
             return f"Encoding {self.codec or 'video'}: {self.progress * 100:.0f}%"
-        if self.stage == ACESCG:
-            return f"EXR to ACEScg: {self.acescgFramesDone()}/{self.total_frames} frames"
+        if self.stage == EXR:
+            return f"{self.exrLabel()}: {self.exrFramesDone()}/{self.total_frames} frames"
         if self.stage == DONE:
             return f"Done: {self.title}"
         if self.stage == CANCELLED:
@@ -156,7 +175,7 @@ class ConversionJob:
 
     def start(self):
         if not self.convert_video:
-            return self._startAcescg() if self.acescg_commands else self._finish(DONE)
+            return self._startExr() if self.exr_commands else self._finish(DONE)
         if not self.converter.available:
             return self._finish(FAILED, "ffmpeg not found")
         if not self.codecs:
@@ -182,14 +201,14 @@ class ConversionJob:
             else:
                 self.video.unlink(missing_ok=True)  # partial video
                 self._finish(FAILED, f"ffmpeg failed: {result.tail(3) or result.error}")
-        elif self.stage == ACESCG:
+        elif self.stage == EXR:
             if result:
                 for frame in self.temp_folder.iterdir():
                     os.replace(frame, self.sequence.parent / frame.name)
-                log.info("EXR converted to ACEScg: %s", self.sequence.parent)
+                log.info("%s: %s", self.exrLabel(), self.sequence.parent)
                 self._finish(DONE)
             else:
-                self._finish(FAILED, "EXR to ACEScg failed, EXR kept as recorded")
+                self._finish(FAILED, f"{self.exrLabel()} failed, EXR kept as recorded")
         return self.finished
 
     def cancel(self):
@@ -230,24 +249,29 @@ class ConversionJob:
         if self.delete_input:
             for frame in sequenceFiles(self.sequence, self.frame_padding):
                 frame.unlink()
-        if self.acescg_commands:
-            self._startAcescg()
+        if self.exr_commands:
+            self._startExr()
         else:
             self._finish(DONE)
 
-    def _startAcescg(self):
-        self.stage = ACESCG
+    def exrLabel(self) -> str:
+        """EXR -> ACEScg, DWAA"""
+        parts = (["ACEScg"] if self.acescg else []) + [self.compression.split(":")[0].upper()]
+        return "EXR -> " + ", ".join(parts)
+
+    def _startExr(self):
+        self.stage = EXR
         shutil.rmtree(self.temp_folder, ignore_errors=True)
         self.temp_folder.mkdir(parents=True)
-        self._processes = [process.Process(cmd, "DinoWrite: EXR to ACEScg") for cmd in self.acescg_commands]
+        self._processes = [process.Process(cmd, f"DinoWrite: {self.exrLabel()}") for cmd in self.exr_commands]
 
     def _finish(self, stage: str, error: str = ""):
         self.stage, self.error = stage, error
         shutil.rmtree(self.temp_folder, ignore_errors=True)
-        for temp in (self._progress_dir, self._acescg_dir):
+        for temp in (self._progress_dir, self._exr_dir):
             if temp is not None:
                 temp.cleanup()
-        self._progress_dir = self._acescg_dir = None
+        self._progress_dir = self._exr_dir = None
         if stage == CANCELLED:
             log.warning("Cancelled, image sequence is kept as recorded")
         elif stage == FAILED:
