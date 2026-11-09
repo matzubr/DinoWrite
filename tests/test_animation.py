@@ -82,7 +82,9 @@ def test_checkbox_flashes_on_toggle_not_on_open(houdini):
     from conftest import waitUntil
 
     box = widgets.CheckBox("x", default=True)
+    box.setChecked(False)  # loading values before the window is shown
     assert box.flash == 0.0, "no flash for the initial state"
-    box.setChecked(False)
+    box.show()
+    box.setChecked(True)
     assert waitUntil(lambda: box.flash > 0)
     assert waitUntil(lambda: box.flash == 0.0)

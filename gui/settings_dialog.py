@@ -28,10 +28,15 @@ FRAME_TOKEN = re.compile(r"\$F\d+")
 OBJECT_NAME = "DinoWriteSettings"
 BODY_NAME = "DinoWriteSettingsBody"
 DIALOG_WIDTH = 620
+LABEL_WIDTH = 140
+SECTION_NAME = "DinoWriteSettingsSection"
+TAB_CHECKED_STYLE = """
+QPushButton:checked { background-color: rgba(183, 134, 32, 20%); border: 1px solid #b78620; color: #ffffff; }
+"""
 
 
 def bodyStyle() -> str:
-    """Same look as the main window: stylesheets.json entries + tabs/text edits/spin boxes in that palette"""
+    """Same look as the main window: stylesheets.json entries + text edits, tooltips, scroll bars in that palette"""
     styles = widgets.styles
     line_edit = styles.get("lineedit")
     return "".join([
@@ -39,25 +44,6 @@ def bodyStyle() -> str:
         styles.get("checkbox"), styles.get("menu"),
         line_edit.replace("QLineEdit", "QPlainTextEdit"),
         f"""
-        QTabWidget::pane {{
-            background-color: {COLORS['grey']};
-            border: 1px solid #202020;
-            border-radius: 5px;
-            top: -1px;
-        }}
-        QTabWidget > QWidget > QWidget {{ background-color: {COLORS['grey']}; }}
-        QTabBar::tab {{
-            background-color: qlineargradient(x1:1, y1:0, x2:1, y2:1, stop:0 #545454, stop:1 #3b3b3b);
-            color: #dddddd;
-            border: 1px solid #202020;
-            border-bottom: none;
-            border-top-left-radius: 5px;
-            border-top-right-radius: 5px;
-            padding: 5px 14px;
-            margin-right: 2px;
-        }}
-        QTabBar::tab:selected {{ background-color: {COLORS['grey']}; color: #ffffff; border-color: {COLORS['accent']}; }}
-        QTabBar::tab:hover:!selected {{ background-color: rgba(183, 134, 32, 20%); }}
         QToolTip {{ background-color: {COLORS['grey-dark']}; color: {COLORS['white']}; border: 1px solid #343434; }}
         QScrollBar:vertical, QScrollBar:horizontal {{ background: {COLORS['grey-dark']}; border: none; margin: 0; }}
         QScrollBar:vertical {{ width: 10px; }}
@@ -80,35 +66,63 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.setFixedWidth(DIALOG_WIDTH)
         self.setupRoundedWindow(OBJECT_NAME)
         QDir.addSearchPath("icons", ICONS_FOLDER.as_posix())  # checkbox/combobox images in stylesheets
-        self.setFont(QFont(widgets.MAIN_FONT, widgets.MAIN_SIZE - 1))
+        self.setFont(QFont(widgets.MAIN_FONT, widgets.MAIN_SIZE))
         self.settings = config.load()
 
-        tabs = QTabWidget()
-        tabs.addTab(self._generalTab(), "General")
-        tabs.addTab(self._videoTab(), "Video")
-        tabs.addTab(self._presetsTab(), "Presets")
-        tabs.currentChanged.connect(lambda _: animation.refreshText(tabs.currentWidget()))  # the page fades in
+        # Tabs as buttons (same animated buttons as the main window), pages of grey section frames
+        self.pages = QStackedWidget()
+        self.tab_buttons = []
+        tab_row = QHBoxLayout()
+        tab_row.setSpacing(6)
+        for index, (title, page) in enumerate((("General", self._generalTab()), ("Video", self._videoTab()),
+                                                ("Presets", self._presetsTab()))):
+            self.pages.addWidget(page)
+            button = widgets.PushButton(title)
+            button.setCheckable(True)
+            button.setCursor(Qt.PointingHandCursor)
+            button.setStyleSheet(widgets.styles.get("mainbutton") + TAB_CHECKED_STYLE)
+            button.clicked.connect(lambda _=False, i=index: self.showPage(i))
+            self.tab_buttons.append(button)
+            tab_row.addWidget(button)
+        self.tab_buttons[0].setChecked(True)
 
-        user_file = QLabel(f"User settings: {config.userSettingsPath().as_posix()}")
+        user_file = widgets.ElidedLabel(f"User settings: {config.userSettingsPath().as_posix()}")
         user_file.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        user_file.setWordWrap(True)
+        user_file.setCursor(Qt.IBeamCursor)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        reset_button = buttons.addButton("Reset to defaults", QDialogButtonBox.ResetRole)
-        folder_button = buttons.addButton("Open settings folder", QDialogButtonBox.HelpRole)
-        buttons.accepted.connect(self.save)
-        buttons.rejected.connect(self.reject)
+        save_button = widgets.PushButton("Save")
+        cancel_button = widgets.PushButton("Cancel")
+        reset_button = widgets.PushButton("Reset to defaults")
+        folder_button = widgets.PushButton("Open settings folder")
+        for button in (save_button, cancel_button, reset_button, folder_button):
+            button.setCursor(Qt.PointingHandCursor)
+        save_button.clicked.connect(self.save)
+        cancel_button.clicked.connect(lambda: self.fadeOut(self.reject))
         reset_button.clicked.connect(self.resetToDefaults)
         folder_button.clicked.connect(self.openSettingsFolder)
+        buttons = QHBoxLayout()
+        buttons.addWidget(reset_button)
+        buttons.addWidget(folder_button)
+        buttons.addStretch()
+        buttons.addWidget(cancel_button)
+        buttons.addWidget(save_button)
+        self.save_button = save_button
+
+        footer = self._frame()
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(10, 6, 10, 8)
+        footer_layout.addWidget(user_file)
+        footer_layout.addLayout(buttons)
 
         body = QWidget()
         body.setObjectName(BODY_NAME)
         body.setStyleSheet(bodyStyle())
         body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(10, 0, 10, 10)
-        body_layout.addWidget(tabs)
-        body_layout.addWidget(user_file)
-        body_layout.addWidget(buttons)
+        body_layout.addLayout(tab_row)
+        body_layout.addWidget(self.pages)
+        body_layout.addWidget(footer)
+        self.footer = footer
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -127,9 +141,10 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.fb_name.setToolTip("File name template: {name}, {version}, {fileformat} and a frame token like $F4")
         self.fb_video_ext = QComboBox()
         self.fb_video_ext.addItems(self.settings["formats"]["video_exts"])
-        self.delete_incomplete = QCheckBox("Delete flipbook if it doesn't cover the frame range")
-        self.exr_acescg = QCheckBox("Convert EXR to ACEScg (opens right in Nuke with an ACES config)")
+        self.delete_incomplete = widgets.CheckBox("Delete flipbook if it doesn't cover the frame range")
+        self.exr_acescg = widgets.CheckBox("Convert EXR to ACEScg (for Nuke)")
         self.exr_acescg.setToolTip(
+            "Opens right in Nuke with an ACES config (ACEScg is the default for EXR there).\n"
             "After recording, the kept EXR are converted from the viewport look back to ACEScg\n"
             "(inverse of the viewer's OCIO display/view, hoiiotool 2.5+). A viewer with the same\n"
             "display/view shows exactly what the viewport showed. Off: EXR stay as recorded.")
@@ -147,56 +162,99 @@ class SettingsDialog(RoundedWindow, QDialog):
             "A 4K flipbook on a 2K monitor: a floating copy of the viewer is sized to the resolution\n"
             "(bigger than the screen), so frames are rendered at true 4K instead of being stretched")
 
-        form = QFormLayout()
-        form.addRow("Flipbooks folder", self.fb_folder)
-        form.addRow("File name", self.fb_name)
-        form.addRow("Video extension", self.fb_video_ext)
-        form.addRow("Record viewer", self.true_resolution)
-        form.addRow("EXR compression", self.exr_compression)
-        form.addRow("", self.delete_incomplete)
-        form.addRow("", self.exr_acescg)
-        return self._page(form)
+        return self._page(
+            self._section([("Flipbooks folder", self.fb_folder), ("File name", self.fb_name),
+                           ("Video extension", self.fb_video_ext)]),
+            self._section([("Record viewer", self.true_resolution), ("", self.delete_incomplete)]),
+            self._section([("EXR compression", self.exr_compression), ("", self.exr_acescg)]))
 
     def _videoTab(self) -> QWidget:
-        self.delete_input = QCheckBox("Delete image sequence after successful conversion")
-        self.video_audio = QCheckBox("Add scene audio (the file in the Audio panel)")
+        self.delete_input = widgets.CheckBox("Delete image sequence after successful conversion")
+        self.video_audio = widgets.CheckBox("Add scene audio (the file in the Audio panel)")
         self.video_audio.setToolTip("The sound file set in Houdini's Audio panel (playbar sound), synced\n"
                                     "like in the playbar. Nothing happens when no file is set.")
         self.open_after = QComboBox()
         for key, label in OPEN_AFTER:
             self.open_after.addItem(label, key)
-        self.tools_status = QLabel()
+        self.tools_status = widgets.Label()
         # no word wrap: QFormLayout gets the height of a wrapped label wrong and rows overlap
         self.tools_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.tools_status.setCursor(Qt.IBeamCursor)
         self.tools_status.setToolTip("ffmpeg path, encoder and the command: advanced.ffmpeg_path, "
                                      "advanced.video_codec, ffmpeg_cmd in the user settings file")
 
-        form = QFormLayout()
-        form.addRow("Open result", self.open_after)
-        form.addRow("", self.video_audio)
-        form.addRow("", self.delete_input)
-        form.addRow("", self.tools_status)
-        return self._page(form)
+        return self._page(
+            self._section([("Open result", self.open_after), ("", self.video_audio), ("", self.delete_input)]),
+            self._section([("Found tools", self.tools_status)]))
 
     def _presetsTab(self) -> QWidget:
         self.resolutions = QPlainTextEdit()
         self.resolutions.setPlaceholderText("1920 1080")
         self.frame_ranges = QPlainTextEdit()
         self.frame_ranges.setPlaceholderText("From Current Frame To Global End = $F $FEND")
-
         for edit in (self.resolutions, self.frame_ranges):
             edit.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Resolutions, one per line: width height"))
-        layout.addWidget(self.resolutions)
-        layout.addWidget(QLabel("Frame ranges, one per line: name = start end"))
-        layout.addWidget(self.frame_ranges)
-        return self._page(layout)
+            edit.setMinimumHeight(90)
+        return self._page(
+            self._section([("Resolutions", self.resolutions)], hint="one per line: width height"),
+            self._section([("Frame ranges", self.frame_ranges)], hint="one per line: name = start end"))
 
-    def _page(self, layout) -> QWidget:
+    def _section(self, rows, hint: str = "") -> QWidget:
+        """Grey frame like the main window's blocks, bold right-aligned labels"""
+        frame = self._frame()
+        form = QFormLayout(frame)
+        form.setContentsMargins(10, 8, 10, 8)
+        form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.setHorizontalSpacing(10)
+        for label, field in rows:
+            if label:
+                title = widgets.HBLabel(label)
+                title.setFixedWidth(LABEL_WIDTH)
+                if hint:
+                    title.setToolTip(hint)
+                    field.setToolTip(hint)
+                form.addRow(title, field)
+            else:
+                form.addRow(self._spacer(), field)
+        return frame
+
+    @staticmethod
+    def _frame() -> QFrame:
+        """Grey block like the main window's; the style is scoped to the frame so fields keep theirs"""
+        frame = QFrame()
+        frame.setObjectName(SECTION_NAME)
+        frame.setStyleSheet(f"QFrame#{SECTION_NAME} {{ background-color: {COLORS['grey']}; border-radius: 5px; }}")
+        return frame
+
+    @staticmethod
+    def _spacer() -> QWidget:
+        spacer = QWidget()
+        spacer.setFixedWidth(LABEL_WIDTH)
+        return spacer
+
+    def _page(self, *sections) -> QWidget:
         page = QWidget()
-        page.setLayout(layout)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        for section in sections:
+            layout.addWidget(section)
+        layout.addStretch()
+        page.sections = list(sections)
         return page
+
+    def showPage(self, index: int):
+        """Switch tab: the page's sections come in one after another"""
+        for i, button in enumerate(self.tab_buttons):
+            button.setChecked(i == index)
+        if self.pages.currentIndex() != index:
+            self.pages.setCurrentIndex(index)
+            animation.stagger(self.pages.currentWidget().sections)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not getattr(self, "_staggered", False):
+            self._staggered = True
+            QTimer.singleShot(0, lambda: animation.stagger(self.pages.currentWidget().sections + [self.footer]))
 
     # ---------- load / collect ----------
 

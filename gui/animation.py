@@ -386,7 +386,11 @@ class AnimatedCheckBox:
         self._hoverAnimation = _animation(self, CHECK_HOVER_MS, QEasingCurve.OutCubic, self._set("hover"))
         self._flashAnimation = _animation(self, CHECK_FLASH_MS, QEasingCurve.OutCubic, self._set("flash"))
         self.setAttribute(Qt.WA_Hover)
-        self.toggled.connect(lambda _: _run(self._flashAnimation, 1.0, 0.0))
+        self.toggled.connect(self._flashOnToggle)
+
+    def _flashOnToggle(self, _checked):
+        if self.isVisible():  # not when a dialog loads its values before showing
+            _run(self._flashAnimation, 1.0, 0.0)
 
     def _set(self, attribute: str):
         def apply(value):
