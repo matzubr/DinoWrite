@@ -110,3 +110,31 @@ def test_gear_button_reopens_window_with_new_settings(houdini, monkeypatch, tmp_
     assert new_window.filename.text() == "my_shot", "field values must survive the reopen"
     assert new_window.addresolution == ["777 333"]
     new_window.close()
+
+
+def test_token_chips_insert_at_cursor_and_preview(dialog):
+    dialog.fb_name.setText("{name}.$F4.{fileformat}")
+    dialog.fb_name.setCursorPosition(len("{name}"))
+    dialog.insertToken(dialog.fb_name, ".{version}")
+    assert dialog.fb_name.text() == "{name}.{version}.$F4.{fileformat}"
+    assert dialog.name_preview.text() == "→ shot_010.v001.1001.exr"
+    dialog.fb_name.setText("{shot}.$F4.exr")
+    assert "Unknown placeholder" in dialog.name_preview.text()
+    dialog.fb_name.setText("{name}.exr")
+    assert "frame token" in dialog.name_preview.text()
+
+
+def test_browse_keeps_name_subfolder(dialog, monkeypatch):
+    from DinoWrite.gui import settings_dialog
+
+    asked = []
+    monkeypatch.setattr(settings_dialog, "pickFolder", lambda start: asked.append(start) or "$JOB/flipbooks/")
+    dialog.fb_folder.setText("$HIP/../preview/{name}")
+    dialog.browseFolder()
+    assert asked == ["$HIP/../preview"] and dialog.fb_folder.text() == "$JOB/flipbooks/{name}"
+    dialog.fb_folder.setText("/mnt/previews")
+    dialog.browseFolder()
+    assert dialog.fb_folder.text() == "$JOB/flipbooks"
+    monkeypatch.setattr(settings_dialog, "pickFolder", lambda start: "")  # cancelled
+    dialog.browseFolder()
+    assert dialog.fb_folder.text() == "$JOB/flipbooks"

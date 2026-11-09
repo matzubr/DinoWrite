@@ -1,5 +1,6 @@
 """Settings dialog: edits settings.json values, saves only overrides to the user settings file."""
 import copy
+import posixpath
 import re
 
 from .. import config
@@ -23,6 +24,40 @@ OPEN_AFTER = (
     ("folder", "Folder with the sequence"),
 )
 FRAME_TOKEN = re.compile(r"\$F\d+")
+FOLDER_TOKENS = (("{name}", "Flipbook name from the window"),
+                 ("$HIP", "Folder of the .hip file"), ("$JOB", "Project folder ($JOB)"))
+NAME_TOKENS = (("{name}", "Flipbook name from the window"), ("{version}", "v001, v002...: the next free version"),
+               ("{fileformat}", "exr / png / jpg"), ("$F4", "Frame number, 4 digits: 1001"))
+PREVIEW_VALUES = {"name": "shot_010", "version": "v001", "fileformat": "exr"}
+PREVIEW_COLOR = "#8a8a8a"
+CHIP_STYLE = """
+QPushButton { padding: 1px 8px; border-radius: 9px; color: #e0c27a; }
+"""
+
+
+def expand(path: str) -> str:
+    """$HIP/$JOB expanded like Houdini does (unchanged when it can't)"""
+    try:
+        import hou
+
+        expanded = hou.text.expandString(path)
+    except Exception:  # noqa: BLE001
+        return path
+    return expanded if isinstance(expanded, str) else path
+
+
+def pickFolder(start: str) -> str:
+    """Houdini's file browser (keeps $HIP / $JOB in the path), Qt's when hou can't show it"""
+    try:
+        import hou
+
+        chosen = hou.ui.selectFile(start_directory=start or None, title="Flipbooks folder",
+                                   file_type=hou.fileType.Directory, chooser_mode=hou.fileChooserMode.Read)
+        if isinstance(chosen, str):
+            return chosen
+    except Exception:  # noqa: BLE001
+        pass
+    return QFileDialog.getExistingDirectory(None, "Flipbooks folder", expand(start)) or ""
 
 
 OBJECT_NAME = "DinoWriteSettings"
@@ -162,8 +197,31 @@ class SettingsDialog(RoundedWindow, QDialog):
             "A 4K flipbook on a 2K monitor: a floating copy of the viewer is sized to the resolution\n"
             "(bigger than the screen), so frames are rendered at true 4K instead of being stretched")
 
+        browse = widgets.PushButton("")
+        browse.setIcon(QIcon((ICONS_FOLDER / "folder-open.svg").as_posix()))
+        browse.setFixedSize(QSize(28, 28))
+        browse.setCursor(Qt.PointingHandCursor)
+        browse.setToolTip("Choose the folder (Houdini file browser: keeps $HIP / $JOB)")
+        browse.clicked.connect(self.browseFolder)
+        self.browse_button = browse
+        folder_row = QWidget()
+        folder_layout = QHBoxLayout(folder_row)
+        folder_layout.setContentsMargins(0, 0, 0, 0)
+        folder_layout.addWidget(self.fb_folder)
+        folder_layout.addWidget(browse)
+
+        self.folder_preview = self._previewLabel()
+        self.name_preview = self._previewLabel()
+        for field in (self.fb_folder, self.fb_name):
+            field.textChanged.connect(self.updatePreviews)
+
         return self._page(
-            self._section([("Flipbooks folder", self.fb_folder), ("File name", self.fb_name),
+            self._section([("Flipbooks folder", folder_row),
+                           ("", self._tokens(self.fb_folder, FOLDER_TOKENS)),
+                           ("", self.folder_preview),
+                           ("File name", self.fb_name),
+                           ("", self._tokens(self.fb_name, NAME_TOKENS)),
+                           ("", self.name_preview),
                            ("Video extension", self.fb_video_ext)]),
             self._section([("Record viewer", self.true_resolution), ("", self.delete_incomplete)]),
             self._section([("EXR compression", self.exr_compression), ("", self.exr_acescg)]))
@@ -198,6 +256,64 @@ class SettingsDialog(RoundedWindow, QDialog):
         return self._page(
             self._section([("Resolutions", self.resolutions)], hint="one per line: width height"),
             self._section([("Frame ranges", self.frame_ranges)], hint="one per line: name = start end"))
+
+    def _tokens(self, field: QLineEdit, tokens) -> QWidget:
+        """Small buttons with the variables a template understands: click inserts it at the cursor"""
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        for token, meaning in tokens:
+            chip = widgets.PushButton(token, size=widgets.MAIN_SIZE - 3, radius=9)
+            chip.setStyleSheet(widgets.styles.get("mainbutton") + CHIP_STYLE)
+            chip.setCursor(Qt.PointingHandCursor)
+            chip.setToolTip(meaning)
+            chip.clicked.connect(lambda _=False, t=token: self.insertToken(field, t))
+            layout.addWidget(chip)
+        layout.addStretch()
+        return row
+
+    def insertToken(self, field: QLineEdit, token: str):
+        field.insert(token)
+        field.setFocus()
+
+    @staticmethod
+    def _previewLabel() -> QLabel:
+        label = widgets.ElidedLabel("")
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        label.setCursor(Qt.IBeamCursor)
+        return label
+
+    def updatePreviews(self):
+        """What the templates turn into for an example flipbook"""
+        folder, name = self.fb_folder.text().strip(), self.fb_name.text().strip()
+        try:
+            folder_text = "→ " + posixpath.normpath(expand(folder.format(**PREVIEW_VALUES)).replace("\\", "/"))
+            folder_ok = True
+        except (KeyError, IndexError, ValueError) as e:
+            folder_text, folder_ok = f"Unknown placeholder {e}", False
+        try:
+            name_text = "→ " + FRAME_TOKEN.sub("1001", name.format(**PREVIEW_VALUES))
+            name_ok = bool(FRAME_TOKEN.search(name))
+            if not name_ok:
+                name_text += "   (needs a frame token like $F4)"
+        except (KeyError, IndexError, ValueError) as e:
+            name_text, name_ok = f"Unknown placeholder {e}", False
+        for label, text, ok in ((self.folder_preview, folder_text, folder_ok), (self.name_preview, name_text, name_ok)):
+            color = PREVIEW_COLOR if ok else COLORS["crimson"]
+            label.setStyleSheet(f"background: transparent; color: {color};")
+            animation.setTextAnimated(label, text)
+
+    def browseFolder(self):
+        """Pick the flipbooks folder; a trailing /{name} (one folder per flipbook name) is kept"""
+        current = self.fb_folder.text().strip()
+        keeps_name = current.rstrip("/").endswith("{name}")
+        base = current.rstrip("/")[:-len("{name}")].rstrip("/") if keeps_name else current
+        chosen = pickFolder(base)
+        if not chosen:
+            return
+        chosen = chosen.rstrip("/")
+        self.fb_folder.setText(f"{chosen}/{{name}}" if keeps_name else chosen)
 
     def _section(self, rows, hint: str = "") -> QWidget:
         """Grey frame like the main window's blocks, bold right-aligned labels"""
@@ -277,6 +393,7 @@ class SettingsDialog(RoundedWindow, QDialog):
             f"{name} = {value}" for name, value in settings.get("custom_framerange", {}).items()))
 
         self._updateToolsStatus(advanced)
+        self.updatePreviews()
 
     def collect(self) -> tuple:
         """Returns (settings, errors)"""
