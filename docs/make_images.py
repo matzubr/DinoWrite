@@ -151,6 +151,8 @@ def main():
         onBackground(window.statusline.parentWidget(), pad=8).save((DOCS / "aspect_warning.png").as_posix())
         window.close()
 
+        from DinoWrite.gui import settings_dialog
+        settings_dialog.expand = lambda path: path.replace("$HIP", "C:/projects/sh010/houdini")  # not the temp folder
         dialog = SettingsDialog()
         stopFade(dialog)
         dialog.show()
