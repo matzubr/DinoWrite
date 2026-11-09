@@ -145,9 +145,6 @@
             "color: lightgray;",
             "border: none;"
         ],
-        "QCheckBox:hover":[
-            "background-color: rgba(183, 134, 32, 20%);"
-        ],
         "QCheckBox::indicator":[
             "background-color: #323232;",
             "width: 20px;",

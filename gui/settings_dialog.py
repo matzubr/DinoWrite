@@ -5,7 +5,7 @@ import re
 from .. import config
 from ..core import acescg, ffmpeg
 from ..core.log import log
-from . import widgets
+from . import animation, widgets
 from .frameless import RoundedWindow, TitleBar
 from .qt import *  # noqa: F403
 from .resources import ICONS_FOLDER
@@ -87,6 +87,7 @@ class SettingsDialog(RoundedWindow, QDialog):
         tabs.addTab(self._generalTab(), "General")
         tabs.addTab(self._videoTab(), "Video")
         tabs.addTab(self._presetsTab(), "Presets")
+        tabs.currentChanged.connect(lambda _: animation.refreshText(tabs.currentWidget()))  # the page fades in
 
         user_file = QLabel(f"User settings: {config.userSettingsPath().as_posix()}")
         user_file.setTextInteractionFlags(Qt.TextSelectableByMouse)

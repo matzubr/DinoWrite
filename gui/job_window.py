@@ -1,7 +1,7 @@
 """Small progress window for a background conversion job (Houdini stays usable meanwhile)."""
 import hou
 
-from . import widgets
+from . import animation, widgets
 from .frameless import RoundedWindow, TitleBar
 from .qt import *  # noqa: F403
 from .theme import COLORS
@@ -101,11 +101,29 @@ class JobWindow(RoundedWindow, QWidget):
 
     def tick(self):
         finished = self.job.step()
-        self.status.setText(self.job.status)
-        self.bar.setValue(int(self.job.progress * 1000))
+        if self.job.status.split(":")[0] != self.status.text().split(":")[0]:
+            animation.setTextAnimated(self.status, self.job.status)  # a new stage blinks in
+        else:
+            self.status.setText(self.job.status)
+        self._smoothBar(int(self.job.progress * 1000))
         self._statusBar(finished)
         if finished:
             self._finished()
+
+    def _smoothBar(self, value: int):
+        """The bar glides to the new value instead of jumping every poll"""
+        if value == self.bar.value():
+            return
+        if value < self.bar.value():  # next stage starts from zero
+            self.bar.setValue(value)
+            return
+        glide = QPropertyAnimation(self.bar, b"value", self.bar)
+        glide.setDuration(POLL_MS)
+        glide.setStartValue(self.bar.value())
+        glide.setEndValue(value)
+        glide.setEasingCurve(QEasingCurve.OutCubic)
+        self._barAnimation = glide
+        glide.start(QAbstractAnimation.DeleteWhenStopped)
 
     def _statusBar(self, finished: bool):
         """Same progress in Houdini's status bar, visible even when the window is behind something"""

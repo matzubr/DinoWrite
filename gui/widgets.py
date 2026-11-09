@@ -1,5 +1,5 @@
 from .qt import *  # noqa: F403
-from .animation import AnimatedButton
+from .animation import AnimatedButton, AnimatedCheckBox, fadeMenus
 from .resources import FONT_FILE, STYLESHEETS_FILE, Icons as _Icons, StyleSheet
 from ..core.log import log
 
@@ -200,6 +200,7 @@ class DropDownButton(AnimatedButton, QPushButton):
         self.menu.setStyleSheet(styles.get("menu"))
         self.menu.setLayoutDirection(Qt.RightToLeft)
         self.menu.setCursor(Qt.PointingHandCursor)
+        fadeMenus(self.menu)
         self.setMenu(self.menu)
 
         menu = list(menu)
@@ -233,9 +234,9 @@ class DropDownButton(AnimatedButton, QPushButton):
                 
                 self.menu.addAction(action)
 
-class CheckBox(QCheckBox):
+class CheckBox(AnimatedCheckBox, QCheckBox):
     """
-    Simple CheckBox
+    CheckBox with an animated hover glow and a flash on toggle
     """
     def __init__(self,
                 label:str="",
@@ -250,6 +251,7 @@ class CheckBox(QCheckBox):
         self.setFont(QFont(font,size))
         self.setStyleSheet(styles.get("checkbox"))
         self.setChecked(default)
+        self.setupAnimation()  # after the initial state: no flash on open
         self.setFocusPolicy(Qt.ClickFocus)
         self.setCursor(Qt.PointingHandCursor)
 

@@ -59,7 +59,8 @@ def test_progress_and_single_finish_callback(make_window):
     assert window.isVisible() and window.name.text() == "shot.v001.mov"
 
     window.tick()
-    assert window.bar.value() == 333 and window.status.text() == "Encoding 33%"
+    assert window.status.text() == "Encoding 33%"
+    assert waitUntil(lambda: window.bar.value() == 333), "the bar glides to the progress"
     window.tick()
     window.tick()
     window.tick()
