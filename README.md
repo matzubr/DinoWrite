@@ -96,6 +96,11 @@ Solaris (LOP) viewers are always recorded in the maximized viewport: Solaris kee
 
 Some OSes (macOS, some Linux window managers) don't allow windows bigger than the screen: then a warning is logged and the image is scaled as before. On HiDPI screens a 4K viewport fits into a smaller window.
 
+### Resolution and frame range menus
+Every item shows in brackets what it will set, worked out when the menu opens: `Camera Resolution  (3840×2160)`,
+`Viewport Resolution  (1712×963)` (the current viewport size), `1/2  (960×540)`, `2/3`, `×2`, `×3` (of the
+resolution in the fields), `Global Frame Range  (1001–1240)`, `Playbar Frame Range`, and the presets.
+
 ### Camera resolution
 "Camera Resolution" in the resolution menu:
 - OBJ / SOP: `resx` × `resy` of the camera the viewport looks through
@@ -138,7 +143,7 @@ is off or not possible: the viewport look as is (e.g. `ACES 1.0 - SDR Video`), `
   `matte_paint` is ACEScct: highlights are kept, the error is about 1/255. In older configs (cg-config v1, Nuke's
   `aces_1.2`) it's sRGB - Texture, which can't hold anything brighter than scene 1.0: the brightest parts come out
   greyish. Other image viewers show the files flat, use the video there.
-  - **Which colorspace** (`advanced.ldr_colorspace`, Settings → General → PNG/JPG colorspace): `auto` takes the
+  - **Which colorspace** (`advanced.ldr_colorspace`, Settings → General → PNG/JPG colors): `auto` takes the
     `matte_paint` role of Houdini's OCIO config; a config without that role is judged by its OCIO version
     (2.3+, i.e. cg-config v2.1 and newer: ACEScct, older: sRGB - Texture). The detected one is shown in the menu and
     in the File Format list (`png (ACEScct)`). If Nuke uses another config than Houdini, look at what its Read node

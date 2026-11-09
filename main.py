@@ -44,7 +44,11 @@ FRAME_RANGES_DROPDOWN_DICT =  { "Global Frame Range":"$FSTART $FEND",
                                 "Playbar Frame Range":"$RFSTART $RFEND",
                                 "---":""}
 FRAME_RANGES_COMPLETER_LIST = ['$F','$FSTART','$FEND','$RFSTART','$RFEND']
-RESOLUTION_DROPDOWN_LIST =    ["Camera Resolution","1/2","2/3","---"]
+RESOLUTION_SCALES = {"1/2": 1 / 2, "2/3": 2 / 3, "×2": 2, "×3": 3}  # of the resolution in the fields
+RESOLUTION_DROPDOWN_LIST =    ["Camera Resolution","Viewport Resolution","---",*RESOLUTION_SCALES,"---"]
+RESOLUTION_ICONS = {"1/2": "dino_knife_cut.svg", "2/3": "dino_knife_cut.svg"}
+MENU_ICON_SIZE = 28
+LTR = "\u200e"  # menus are right-to-left (icons on the right): keeps "(...)" previews in place
 
 
 BYTES_TOLERANCE = 1024
@@ -225,7 +229,8 @@ class DinoWriter(RoundedWindow, QWidget):
         self.resy.installEventFilter(self)
 
         self.res_menu = widgets.DropDownButton(
-            menu=RESOLUTION_DROPDOWN_LIST + self.addresolution, callback=self.setMenuItemResolution)
+            menu=RESOLUTION_DROPDOWN_LIST + self.addresolution, callback=self.setMenuItemResolution,
+            icons=RESOLUTION_ICONS, icon_size=MENU_ICON_SIZE, labeler=self.resolutionMenuText)
 
         grid_layout.addWidget(label_res, 1, 0)
         grid_layout.addWidget(self.resx, 1, 1)
@@ -244,7 +249,8 @@ class DinoWriter(RoundedWindow, QWidget):
 
         self.native_ranges = dict(FRAME_RANGES_DROPDOWN_DICT)
         self.native_ranges.update(self.addframerange)
-        self.frame_menu = widgets.DropDownButton(menu=self.native_ranges.keys(), callback=self.setMenuItemFrameRange)
+        self.frame_menu = widgets.DropDownButton(menu=self.native_ranges.keys(), callback=self.setMenuItemFrameRange,
+                                                 labeler=self.frameRangeMenuText)
 
         grid_layout.addWidget(label_range, 2, 0)
         grid_layout.addWidget(self.framestart, 2, 1)
@@ -595,9 +601,10 @@ class DinoWriter(RoundedWindow, QWidget):
                 final_list.append(name)
                 final_list.append(COLORS_PALLETE["white"])
             final_list+=separator
-        previous = self.seqname.text()
+        final_list = final_list[:-len(separator)]  # no dot after the extension
+        previous = self.seqname.fullText()
         self.seqname.update(final_list)
-        if previous and self.seqname.text() != previous and self.isVisible():
+        if previous and self.seqname.fullText() != previous and self.isVisible():
             animation.hop(self.dino_paint)  # new name or version
             animation.refreshText(self.seqname)
 
@@ -605,35 +612,53 @@ class DinoWriter(RoundedWindow, QWidget):
         animation.setTextAnimated(self.cameraname, f"Camera: {self.hou_viewport.cameraName()}")
 
     def setMenuItemFile(self):
-        item = self.sender().text()
+        item = self.sender().data()
         self.filename.setText(item)
 
-    def setMenuItemResolution(self):
-        item = self.sender().text()
-
+    def menuResolution(self, item: str):
+        """(x, y) a resolution menu item sets, None when it can't be worked out"""
         if item == "Camera Resolution":
-            camera_res = self.hou_viewport.cameraResolution()
-            self.resx.setText(str(camera_res[0]))
-            self.resy.setText(str(camera_res[1]))
-        elif item.find("/")!=-1:
-            divisible,divider = item.split("/")
-            ratio = int(divisible) / int(divider)
-            resx = helpers.toInt(self.resx.text())
-            resy = helpers.toInt(self.resy.text())
+            return tuple(int(v) for v in self.hou_viewport.cameraResolution())
+        if item == "Viewport Resolution":
+            return tuple(int(v) for v in self.hou_viewport.viewportSize())
+        if item in RESOLUTION_SCALES:
+            resx, resy = helpers.toInt(self.resx.text()), helpers.toInt(self.resy.text())
             if resx is None or resy is None:
-                log.warning("Set resolution before dividing it")
-                return
-            newresx = max(round(resx*ratio), MIN_RESOLUTION_X)
-            newresy = max(round(resy*ratio), MIN_RESOLUTION_Y)
-            self.resx.setText(str(newresx))
-            self.resy.setText(str(newresy))
-        else:
-            x, y = item.split(" ")
-            self.resx.setText(str(x))
-            self.resy.setText(str(y))
+                return None
+            ratio = RESOLUTION_SCALES[item]
+            return max(round(resx * ratio), MIN_RESOLUTION_X), max(round(resy * ratio), MIN_RESOLUTION_Y)
+        x, y = item.split(" ")
+        return int(x), int(y)
+
+    def resolutionMenuText(self, item: str) -> str:
+        """'1/2  (960×540)': what the item sets, shown when the menu opens"""
+        if item not in RESOLUTION_SCALES and item not in ("Camera Resolution", "Viewport Resolution"):
+            return item.replace(" ", "×")  # custom resolutions: the value is the text
+        resolution = self.menuResolution(item)
+        return f"{LTR}{item}  ({resolution[0]}×{resolution[1]}){LTR}" if resolution else item
+
+    def setMenuItemResolution(self):
+        item = self.sender().data()
+        try:
+            resolution = self.menuResolution(item)
+        except Exception as e:  # noqa: BLE001 - no viewport / camera: keep the fields
+            log.warning("Can't get %s: %s", item, e)
+            return
+        if resolution is None:
+            log.warning("Set resolution before scaling it")
+            return
+        self.resx.setText(str(resolution[0]))
+        self.resy.setText(str(resolution[1]))
+
+    def frameRangeMenuText(self, item: str) -> str:
+        """'Global Frame Range  (1001–1240)': the frames the item sets, shown when the menu opens"""
+        frames = [helpers.evalFrame(value) for value in self.native_ranges[item].split()]
+        if len(frames) != 2 or None in frames:
+            return item
+        return f"{LTR}{item}  ({frames[0]:g}–{frames[1]:g}){LTR}"
 
     def setMenuItemFrameRange(self):
-        item = self.sender().text()
+        item = self.sender().data()
         start,end = self.native_ranges[item].split()
 
         self.framestart.setText(start)

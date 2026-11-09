@@ -73,7 +73,8 @@ class HBLabel(Label):
         self.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
 class ColorfulLabel(Label):
-    """Colorful label for indicating user inputs
+    """Colorful label for indicating user inputs. Text that doesn't fit ends with '…' (full text in the
+    tooltip) instead of widening the layout: its size hint is the full text, its minimum is small.
 
     Args:
         Args should be in %2 to match type like {label} - {color}
@@ -86,24 +87,55 @@ class ColorfulLabel(Label):
                 font=MAIN_FONT,
                 size=MAIN_SIZE,
                 parent=None) -> QLabel:
-        
+
+        self._parts = []
         super().__init__(font=font,size=size,parent=parent)
+        self.setMinimumWidth(1)
         self.update(labels_list or [])
 
     def update(self,labels_list):
-        template_string = "<font color='{color}')>{label}</font>"
-        
         if len(labels_list)%2!=0:
             log.warning("ColorfulLabel expects label, color pairs: %s", labels_list)
             return
-        
-        string_to_set = ""
-        labels = labels_list[0::2]
-        colors = labels_list[1::2]
-        for i in range(len(labels)):
-            string_to_set+=template_string.format(label=labels[i],color=colors[i])
+        self._parts = list(zip(labels_list[0::2], labels_list[1::2]))
+        self.updateGeometry()
+        self._elide()
 
-        self.setText(string_to_set)
+    def fullText(self) -> str:
+        """Plain text of all the parts, not elided"""
+        return "".join(str(label) for label, _ in self._parts)
+
+    def sizeHint(self) -> QSize:
+        hint = super().sizeHint()
+        margins = self.contentsMargins()
+        return QSize(self.fontMetrics().horizontalAdvance(self.fullText()) + margins.left() + margins.right() + 2,
+                     hint.height())
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(1, super().minimumSizeHint().height())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._elide()
+
+    def _elide(self):
+        """The longest part (the flipbook name) gets shortened with '…': version, frames and extension stay"""
+        import html
+
+        metrics = self.fontMetrics()
+        labels = [str(label) for label, _ in self._parts]
+        overflow = metrics.horizontalAdvance(self.fullText()) - (self.contentsRect().width() - 2)
+        elided = self.isVisible() and overflow > 0 and bool(labels)
+        if elided:
+            longest = max(range(len(labels)), key=lambda index: metrics.horizontalAdvance(labels[index]))
+            label = labels[longest]
+            target = metrics.horizontalAdvance(label) - overflow - metrics.horizontalAdvance("…")
+            while label and metrics.horizontalAdvance(label) > target:
+                label = label[:-1]
+            labels[longest] = label + "…"
+        QLabel.setText(self, "".join(f"<font color='{color}'>{html.escape(label)}</font>"
+                                     for label, (_, color) in zip(labels, self._parts) if label))
+        self.setToolTip(self.fullText() if elided else "")
 
 class ElidedLabel(Label):
     """One line label that never widens its layout: text that doesn't fit ends with '…',
@@ -169,7 +201,11 @@ class LineEdit(QLineEdit):
 
 class DropDownButton(AnimatedButton, QPushButton):
     """
-    Button which dropdown context menu with a bunch of actions
+    Button which dropdown context menu with a bunch of actions.
+
+    Each action keeps its menu item in data() (callbacks read self.sender().data()), so the shown text
+    can change: labeler(item) -> text is asked every time the menu opens (e.g. "1/2  (960×540)").
+    icons: {item: icon file} shown at icon_size px.
     """
     def __init__(self,icon:str=None,
                 title:str="",
@@ -177,6 +213,9 @@ class DropDownButton(AnimatedButton, QPushButton):
                 callback:list=None,
                 font:str=MAIN_FONT,
                 size:int=MAIN_SIZE,
+                icons:dict=None,
+                icon_size:int=0,
+                labeler=None,
                 parent=None) -> QPushButton:
 
         super().__init__(parent)
@@ -197,12 +236,19 @@ class DropDownButton(AnimatedButton, QPushButton):
 
         self.menu = QMenu()
         self.menu.setFont(QFont(font,size))
-        self.menu.setStyleSheet(styles.get("menu"))
+        style = styles.get("menu")
+        if icon_size:
+            style += f"QMenu{{icon-size:{int(icon_size)}px;}}"
+        self.menu.setStyleSheet(style)
         self.menu.setLayoutDirection(Qt.RightToLeft)
         self.menu.setCursor(Qt.PointingHandCursor)
         fadeMenus(self.menu)
         self.setMenu(self.menu)
+        self.labeler = labeler
+        if labeler is not None:
+            self.menu.aboutToShow.connect(self.relabel)
 
+        icons = icons or {}
         menu = list(menu)
         if len(menu)==0:
             menu.append("No folders found")
@@ -210,29 +256,28 @@ class DropDownButton(AnimatedButton, QPushButton):
         for action_name in menu:
             if action_name=="---":
                 self.menu.addSeparator()
-            elif action_name=="1/2": # bad coding :) but i'm lazy
-                pixmap = Icons.get("dino_knife_cut.svg",type="Path")
-                iconpixmap = QPixmap(pixmap)
-                iconpixmap = iconpixmap.scaled(25, 25, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                icon = QIcon(iconpixmap)
+                continue
+            action = QAction(action_name,self)
+            action.setData(action_name)
+            item_icon = Icons.get(icons[action_name]) if action_name in icons else None
+            if item_icon is not None:
+                action.setIcon(item_icon)
+            if action_name!="No folders found":
+                action.triggered.connect(callback)
+            self.menu.addAction(action)
 
-                action = QAction(icon,action_name,self)
-
-                if action_name!="No folders found":
-                    action.triggered.connect(callback)
-                else:
-                    pass
-                
-                self.menu.addAction(action)
-            else:
-                action = QAction(action_name,self)
-
-                if action_name!="No folders found":
-                    action.triggered.connect(callback)
-                else:
-                    pass
-                
-                self.menu.addAction(action)
+    def relabel(self):
+        """Menu texts from the labeler (the item itself when it returns nothing or fails)"""
+        for action in self.menu.actions():
+            item = action.data()
+            if not item:
+                continue
+            try:
+                text = self.labeler(item)
+            except Exception as e:  # noqa: BLE001 - a preview must never break the menu
+                log.warning("Menu preview for '%s': %s", item, e)
+                text = None
+            action.setText(text or item)
 
 class CheckBox(AnimatedCheckBox, QCheckBox):
     """

@@ -176,3 +176,48 @@ def test_closed_details_show_warnings_on_the_arrow(houdini):
     window.setInfoWarning("disk")
     assert "may not fit" not in window.info_toggle.toolTip()
     window.close()
+
+
+def test_long_sequence_name_is_shortened_in_the_middle(houdini):
+    import DinoWrite
+
+    window = DinoWrite.show({})
+    window.filename.setText("a_really_long_shot_name_that_does_not_fit_" * 2)
+    window.updateColorfulLabel()
+    window.layout().activate()
+    shown = window.seqname.text()
+    assert "…" in shown and "v001" in shown and "$F4" in shown, "version, frames, extension stay visible"
+    assert window.seqname.toolTip().endswith(".exr") and window.seqname.fullText().endswith(".exr")
+    assert not window.seqname.fullText().endswith("."), "no dot after the extension"
+    assert window.seqname.geometry().right() < window.dino_paint.geometry().left()
+    assert window.dino_paint.geometry().right() < window.info_toggle.geometry().left()
+    window.close()
+
+
+def test_menus_preview_what_they_set(houdini, hou, monkeypatch):
+    import DinoWrite
+
+    window = DinoWrite.show({})
+    monkeypatch.setattr(window.hou_viewport, "cameraResolution", lambda: (3840, 2160))
+    monkeypatch.setattr(window.hou_viewport, "viewportSize", lambda: (1712, 963), raising=False)
+    monkeypatch.setattr(hou, "hscriptExpression", lambda v: {"$FSTART": 1001, "$FEND": 1240}.get(v, 1), raising=False)
+    window.resx.setText("1920")
+    window.resy.setText("1080")
+    window.res_menu.relabel()
+    texts = {a.data(): a.text().strip("‎") for a in window.res_menu.menu.actions() if a.data()}
+    assert texts["Camera Resolution"] == "Camera Resolution  (3840×2160)"
+    assert texts["Viewport Resolution"] == "Viewport Resolution  (1712×963)"
+    assert texts["1/2"] == "1/2  (960×540)" and texts["×3"] == "×3  (5760×3240)"
+    icons = [a.data() for a in window.res_menu.menu.actions() if not a.icon().isNull()]
+    assert icons == ["1/2", "2/3"], "the knife dino on every dividing item"
+
+    by_item = {a.data(): a for a in window.res_menu.menu.actions() if a.data()}
+    by_item["×2"].trigger()
+    assert (window.resx.text(), window.resy.text()) == ("3840", "2160")
+    by_item["Viewport Resolution"].trigger()
+    assert (window.resx.text(), window.resy.text()) == ("1712", "963")
+
+    window.frame_menu.relabel()
+    frames = {a.data(): a.text().strip("‎") for a in window.frame_menu.menu.actions() if a.data()}
+    assert frames["Global Frame Range"] == "Global Frame Range  (1001–1240)"
+    window.close()
