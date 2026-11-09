@@ -17,7 +17,9 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
    frame range, OCIO view, user, date. The video carries the same passport in its metadata
  - Scene audio (the file in Houdini's Audio panel) goes into the video, synced like in the playbar
  - Memory line: RAM for MPlay and the disk space the flipbook needs vs free space (orange/red when it may not fit)
- - Status line shows how the flipbook will be recorded and encoded, flipbook name is checked while typing
+ - Status line shows how the flipbook will be recorded and encoded, flipbook name is checked while typing.
+   The details slide out with the arrow next to the sequence name (closed by default, remembered); while they're
+   closed, a warning (stretched aspect, not enough disk space) colors the arrow
  - Opens the result when done: the converted video or the folder
  - Settings dialog behind the gear button, your settings survive tool updates
  - Remembers last used values

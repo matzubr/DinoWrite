@@ -4,6 +4,7 @@
 
 hou is stubbed like in the tests; the viewer, tools and paths are fakes, so no personal paths get into the images.
 """
+import os
 import random
 import sys
 import tempfile
@@ -60,6 +61,8 @@ def fakeHoudini(temp: Path):
     hou.text = types.SimpleNamespace(expandString=expand)
     hou.qt = types.SimpleNamespace(mainWindow=lambda: main_window)
     hou.getenv = lambda name, default=None: PREF_DIR if name == "HOUDINI_USER_PREF_DIR" else default
+    # settings / last used values go to the temp folder, not to the fake (relative) pref dir
+    os.environ["DINOWRITE_SETTINGS"] = (temp / "settings.json").as_posix()
     hou.fps = lambda: 24.0
 
     from DinoWrite.core import acescg, ffmpeg, helpers, viewport
@@ -109,6 +112,7 @@ def main():
         window.framestart.setText("1001")
         window.frameend.setText("1100")
         window.convertvideo.setChecked(True)
+        window.setInfoExpanded(True, animate=False)
         for update in (window.updateRamUsage, window.updateColorfulLabel, window.updateStatus):
             update()
         QTest.qWait(600)  # changed text blinks in
@@ -124,7 +128,12 @@ def main():
                 app.processEvents()
                 frames.append(onBackground(window).toImage())
 
-        record(4, wait=False)
+        window.setInfoExpanded(False, animate=False)
+        record(6, wait=False)
+        window.info_toggle.startHover(QPointF(11, 11))
+        window.setInfoExpanded(True)  # details slide out
+        record(14)
+        window.info_toggle.endHover()
         window.res_menu.startHover(QPointF(6, 6))
         record(12)
         window.res_menu.endHover()
@@ -148,7 +157,7 @@ def main():
         window.updateRamUsage()
         window.updateStatus()
         QTest.qWait(600)
-        onBackground(window.statusline.parentWidget(), pad=8).save((DOCS / "aspect_warning.png").as_posix())
+        onBackground(window.statusline.parentWidget().parentWidget(), pad=8).save((DOCS / "aspect_warning.png").as_posix())
         window.close()
 
         from DinoWrite.gui import settings_dialog
@@ -179,9 +188,17 @@ def saveGif(frames, path: Path):
         for index, frame in enumerate(frames):
             png = Path(folder, f"{index:03d}.png")
             frame.save(png.as_posix())
-            image = Image.open(png).convert("RGB")
-            image = image.resize((image.width * 3 // 4, image.height * 3 // 4), Image.LANCZOS)
-            images.append(image.quantize(colors=128, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE))
+            images.append(Image.open(png).convert("RGB"))
+    # The window grows when the details slide out: every frame on a canvas of the biggest one, top aligned
+    width, height = max(i.width for i in images), max(i.height for i in images)
+    background = (BACKGROUND.red(), BACKGROUND.green(), BACKGROUND.blue())
+    frames_out = []
+    for image in images:
+        canvas = Image.new("RGB", (width, height), background)
+        canvas.paste(image, (0, 0))
+        canvas = canvas.resize((width * 3 // 4, height * 3 // 4), Image.LANCZOS)
+        frames_out.append(canvas.quantize(colors=128, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE))
+    images = frames_out
     durations = [FRAME_MS] * len(images)
     durations[-1] = 900
     images[0].save(path, save_all=True, append_images=images[1:], duration=durations, loop=0, optimize=True,
