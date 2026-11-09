@@ -17,8 +17,8 @@ ROOT = DOCS.parent
 sys.path.insert(0, (ROOT / "tests").as_posix())
 import conftest  # noqa: F401,E402  (hou stub, offscreen Qt, DinoWrite on sys.path)
 from PySide6 import QtWidgets  # noqa: E402
-from PySide6.QtCore import QPointF, QSize  # noqa: E402
-from PySide6.QtGui import QColor, QPainter, QPixmap  # noqa: E402
+from PySide6.QtCore import QEvent, QPointF, QSize  # noqa: E402
+from PySide6.QtGui import QColor, QEnterEvent, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
 BACKGROUND = QColor("#262626")
@@ -62,7 +62,7 @@ def fakeHoudini(temp: Path):
     hou.getenv = lambda name, default=None: PREF_DIR if name == "HOUDINI_USER_PREF_DIR" else default
     hou.fps = lambda: 24.0
 
-    from DinoWrite.core import acescg, ffmpeg, viewport
+    from DinoWrite.core import acescg, ffmpeg, helpers, viewport
 
     viewer = types.SimpleNamespace(cameraName=lambda: "shotCam", cameraPixelAspect=lambda: 1.0,
                                    cameraResolution=lambda: (3840, 2160), cameraAspect=lambda: 16 / 9,
@@ -72,13 +72,14 @@ def fakeHoudini(temp: Path):
     ffmpeg.availableEncoders = lambda binary: {"h264_mf", "h264_nvenc", "mpeg4"}
     acescg.findOiiotool = lambda custom="": "$HFS/bin/hoiiotool"
     acescg.oiiotoolVersion = lambda tool: ()
+    helpers.freeSpace = lambda path: 512 * 1024 ** 3
     return main_window
 
 
 class FakeJob:
     """Conversion in the middle of EXR -> ACEScg, for the progress window"""
     title = "shot_010.v003.mov"
-    status = "EXR to ACEScg: 42/100 frames"
+    status = "EXR -> ACEScg, DWAA: 42/100 frames"
     progress = 0.42
     finished = succeeded = False
     error = ""
@@ -101,6 +102,7 @@ def main():
 
         window = DinoWrite.show({})
         stopFade(window)
+        QTest.qWait(900)  # parts of the window come in one after another
         window.filename.setText("shot_010")
         window.resx.setText("3840")
         window.resy.setText("2160")
@@ -109,10 +111,10 @@ def main():
         window.convertvideo.setChecked(True)
         for update in (window.updateRamUsage, window.updateColorfulLabel, window.updateStatus):
             update()
-        app.processEvents()
+        QTest.qWait(600)  # changed text blinks in
         onBackground(window).save((DOCS / "dinowrite.png").as_posix())
 
-        # Animation: hover a menu button, then WRITE
+        # Animation: hover a menu button, toggle a checkbox, new name (dino hops), then WRITE
         frames = []
 
         def record(count: int, wait: bool = True):
@@ -126,6 +128,14 @@ def main():
         window.res_menu.startHover(QPointF(6, 6))
         record(12)
         window.res_menu.endHover()
+        window.convertvideo.enterEvent(QEnterEvent(QPointF(5, 5), QPointF(5, 5), QPointF(5, 5)))
+        record(6)
+        window.convertvideo.setChecked(False)
+        record(10)
+        window.convertvideo.leaveEvent(QEvent(QEvent.Leave))
+        window.filename.setText("shot_020")
+        window.updateColorfulLabel()
+        record(14)
         window.writebutton.startHover(QPointF(90, 20))
         record(18)
         window.writebutton.endHover()
@@ -137,7 +147,7 @@ def main():
         window.resy.setText("1600")
         window.updateRamUsage()
         window.updateStatus()
-        app.processEvents()
+        QTest.qWait(600)
         onBackground(window.statusline.parentWidget(), pad=8).save((DOCS / "aspect_warning.png").as_posix())
         window.close()
 
@@ -147,7 +157,7 @@ def main():
         app.processEvents()
         onBackground(dialog).save((DOCS / "settings.png").as_posix())
         dialog.findChild(QtWidgets.QTabWidget).setCurrentIndex(1)
-        app.processEvents()
+        QTest.qWait(600)  # the page fades in
         onBackground(dialog).save((DOCS / "settings_video.png").as_posix())
         dialog.close()
 

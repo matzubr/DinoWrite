@@ -4,7 +4,7 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
 
 <p align="center">
   <img src="docs/dinowrite.png" width="49%" alt="DinoWrite window">
-  <img src="docs/dinowrite_animation.gif" width="49%" alt="Hover wave, zoom and WRITE press animation">
+  <img src="docs/dinowrite_animation.gif" width="49%" alt="Hover wave, checkbox glow, dino hop on a new name">
 </p>
 
 ## Features
@@ -13,11 +13,17 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
  - True resolution: a 4K flipbook on a 2K monitor is recorded in a torn off copy of the viewer sized to 4K (bigger than the screen) instead of stretching the viewport
  - Convert the sequence to video in the background with ffmpeg that ships with Houdini: Houdini stays usable, a small window shows progress and can cancel
  - Video colors match MPlay right after recording, EXR are converted to ACEScg for Nuke/comp
+ - Kept EXR are compressed with DWAA (several times smaller) and carry a flipbook passport in the header: hip, camera,
+   frame range, OCIO view, user, date. The video carries the same passport in its metadata
+ - Scene audio (the file in Houdini's Audio panel) goes into the video, synced like in the playbar
+ - Memory line: RAM for MPlay and the disk space the flipbook needs vs free space (orange/red when it may not fit)
  - Status line shows how the flipbook will be recorded and encoded, flipbook name is checked while typing
  - Opens the result when done: the converted video or the folder
  - Settings dialog behind the gear button, your settings survive tool updates
  - Remembers last used values
- - Animations in the HotBox style: windows fade in/out; on hover a white wave spreads from the cursor and the button gets lighter and a bit bigger
+ - Animations in the HotBox style: windows fade in/out, window parts come in one after another; on hover a white
+   wave spreads from the cursor and the button gets lighter and a bit bigger; checkboxes glow on hover and flash on
+   toggle; changed info text blinks in; a wrong name shakes; the dino hops on a new name/version; menus fade in
  - Supports multiple viewports
  - Shows existing flipbooks (can grab their name)
  - Grabs resolution from the camera (OBJ camera, or Solaris render settings / USD camera) or divides it; warns when the resolution would stretch the image
@@ -66,8 +72,8 @@ Click the gear button in the window title. Tabs:
 
 | tab | what |
 |---|---|
-| General | flipbooks folder, file name template, video extension, recording viewer, incomplete flipbook cleanup |
-| Video | what to open after writing, sequence cleanup; shows which ffmpeg and encoders are found |
+| General | flipbooks folder, file name template, video extension, recording viewer, EXR compression, incomplete flipbook cleanup, ACEScg |
+| Video | what to open after writing, scene audio, sequence cleanup; shows which ffmpeg and encoders are found |
 | Presets | resolution and frame range presets for the dropdown menus |
 
 ffmpeg path, encoder and the ffmpeg command template (`advanced.ffmpeg_path`, `advanced.video_codec`, `ffmpeg_cmd`)
@@ -84,7 +90,7 @@ Last used window values are kept next to it in `last_used.json`.
 - `always`: always records in the copy
 - `off`: maximized viewport, Houdini scales the image to the resolution
 
-Solaris (LOP) viewers are always recorded in the maximized viewport: Solaris keeps its lighting (Headlight Only...) in options that can't be copied, a viewer copy would record with Normal Lighting. Black background and Off Background Image are greyed out there: setting any viewport display option from Python in Solaris resets the lighting (Houdini bug).
+Solaris (LOP) viewers are always recorded in the maximized viewport: Solaris keeps its lighting (Headlight Only...) in options that can't be copied, a viewer copy would record with Normal Lighting. "Black background" and "Hide BG image" are greyed out there: setting any viewport display option from Python in Solaris resets the lighting (Houdini bug).
 
 Some OSes (macOS, some Linux window managers) don't allow windows bigger than the screen: then a warning is logged and the image is scaled as before. On HiDPI screens a 4K viewport fits into a smaller window.
 
@@ -118,17 +124,33 @@ the viewport as seen.
   it's a preview, not a render. Skipped when the viewer doesn't use OCIO, the config isn't an ACES one,
   hoiiotool or PyOpenColorIO aren't found, or the sequence is deleted after the video. If it fails, the EXR stay as recorded.
 
-After recording, video and ACEScg conversion run in the background, Houdini stays usable:
+- **EXR compression** (`advanced.exr_compression`: `dwaa` default, `zip`, `piz`, `none`): applied in the same
+  hoiiotool pass, also when ACEScg is off or not possible.
+
+### Flipbook passport
+Where a flipbook came from, written right after recording: `hip`, `camera`, `frame_range`, `resolution`, `fps`,
+`ocio_view`, `audio`, `user`, `host`, `date`, `houdini`, `dinowrite`.
+- EXR: header attributes `dinowrite:hip`, ... (Nuke: Read node → Metadata tab, `exr/dinowrite:hip`), plus the
+  standard owner and comments
+- Video: `title`, `artist`, `comment`, `date` and `dinowrite_hip`, ... (`ffprobe`, a player's media info)
+
+### Scene audio
+`advanced.video_audio` (on by default, Settings → Video): the file set in Houdini's Audio panel (playbar sound) goes
+into the video, synced like in the playbar (Audio panel "sync frame" and offset). The video keeps its length:
+shorter sound is padded with silence. CHOP audio isn't supported. Nothing happens when no file is set.
+
+After recording, video and the EXR pass run in the background, Houdini stays usable:
 
 <p align="center">
-  <img src="docs/progress.png" width="45%" alt="Progress window: EXR to ACEScg">
+  <img src="docs/progress.png" width="45%" alt="Progress window: EXR pass">
 </p>
 
 ### Video codec
 `advanced.video_codec`: `auto` (default) or an encoder name. ffmpeg that ships with Houdini (`hffmpeg`) is built
 without GPL parts and has **no libx264**, so `auto` asks ffmpeg which encoders it has and tries
 `libx264` → `h264_videotoolbox` (macOS) → `h264_mf` (Windows) → `h264_nvenc` / `h264_amf` / `h264_qsv` → `mpeg4`,
-moving to the next one if an encoder fails. The `{codec}` line in the ffmpeg command expands to the encoder arguments.
+moving to the next one if an encoder fails. The `{codec}` line in the ffmpeg command expands to the encoder arguments, `{audio_input}` / `{audio}` to the scene
+sound, `{metadata}` to the passport.
 
 ### Tools lookup
 - ffmpeg: `advanced.ffmpeg_path` → `$PDG_FFMPEG` → `$HFS/bin/hffmpeg` (ships with Houdini) → system PATH
@@ -174,8 +196,10 @@ Project layout:
 | `core/` | Houdini logic without Qt |
 | `core/viewport.py` | Scene Viewer wrapper, torn off copy at true resolution |
 | `core/ffmpeg.py` | ffmpeg lookup, command and color filters |
-| `core/conversion.py` | after recording: video (encoder fallback) → EXR to ACEScg, polled without blocking |
-| `core/acescg.py` | EXR → ACEScg via hoiiotool (inverse of the viewer's OCIO display/view) |
+| `core/conversion.py` | after recording: video (encoder fallback, audio, passport) → EXR pass, polled without blocking |
+| `core/acescg.py` | EXR pass via hoiiotool: ACEScg (inverse of the viewer's OCIO display/view), compression, passport |
+| `core/passport.py` | flipbook passport for EXR headers and video metadata |
+| `core/audio.py` | scene audio from the Audio panel, ffmpeg sync arguments |
 | `core/process.py` | polled external process (no threads: hou is not thread safe) |
 | `core/helpers.py`, `core/log.py` | versions, frame/name parsing, logging |
 | `gui/` | Qt: `qt.py` (PySide6/PySide2), theme, frameless windows, widgets, animations, settings dialog, progress window |
