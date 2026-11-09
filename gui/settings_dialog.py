@@ -11,6 +11,8 @@ from .qt import *  # noqa: F403
 from .resources import ICONS_FOLDER
 from .theme import COLORS
 
+EXR_COMPRESSION = (("dwaa", "DWAA (small, for previews)"), ("zip", "ZIP (lossless)"),
+                   ("piz", "PIZ (lossless, grainy images)"), ("none", "None"))
 TRUE_RESOLUTION = (
     ("auto", "Separate viewer window when resolution is bigger than the viewport"),
     ("always", "Always record in a separate viewer window"),
@@ -130,6 +132,13 @@ class SettingsDialog(RoundedWindow, QDialog):
             "After recording, the kept EXR are converted from the viewport look back to ACEScg\n"
             "(inverse of the viewer's OCIO display/view, hoiiotool 2.5+). A viewer with the same\n"
             "display/view shows exactly what the viewport showed. Off: EXR stay as recorded.")
+        self.exr_compression = QComboBox()
+        for key, label in EXR_COMPRESSION:
+            self.exr_compression.addItem(label, key)
+        self.exr_compression.setToolTip(
+            "Kept EXR are rewritten after recording (hoiiotool) with this compression and the flipbook\n"
+            "passport in the header (hip, camera, frame range...: Nuke Read -> Metadata).\n"
+            "DWAA: several times smaller, visually lossless for a preview, fast in Nuke.")
         self.true_resolution = QComboBox()
         for key, label in TRUE_RESOLUTION:
             self.true_resolution.addItem(label, key)
@@ -142,12 +151,16 @@ class SettingsDialog(RoundedWindow, QDialog):
         form.addRow("File name", self.fb_name)
         form.addRow("Video extension", self.fb_video_ext)
         form.addRow("Record viewer", self.true_resolution)
+        form.addRow("EXR compression", self.exr_compression)
         form.addRow("", self.delete_incomplete)
         form.addRow("", self.exr_acescg)
         return self._page(form)
 
     def _videoTab(self) -> QWidget:
         self.delete_input = QCheckBox("Delete image sequence after successful conversion")
+        self.video_audio = QCheckBox("Add scene audio (the file in the Audio panel)")
+        self.video_audio.setToolTip("The sound file set in Houdini's Audio panel (playbar sound), synced\n"
+                                    "like in the playbar. Nothing happens when no file is set.")
         self.open_after = QComboBox()
         for key, label in OPEN_AFTER:
             self.open_after.addItem(label, key)
@@ -159,6 +172,7 @@ class SettingsDialog(RoundedWindow, QDialog):
 
         form = QFormLayout()
         form.addRow("Open result", self.open_after)
+        form.addRow("", self.video_audio)
         form.addRow("", self.delete_input)
         form.addRow("", self.tools_status)
         return self._page(form)
@@ -192,6 +206,8 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.fb_video_ext.setCurrentText(paths.get("fb_video_ext", "mov"))
         self.delete_incomplete.setChecked(bool(advanced.get("delete_incomplete_fb")))
         self.exr_acescg.setChecked(bool(advanced.get("exr_acescg", True)))
+        self.exr_compression.setCurrentIndex(max(self.exr_compression.findData(advanced.get("exr_compression", "dwaa")), 0))
+        self.video_audio.setChecked(bool(advanced.get("video_audio", True)))
         self.true_resolution.setCurrentIndex(max(self.true_resolution.findData(advanced.get("true_resolution", "auto")), 0))
 
         self.delete_input.setChecked(bool(advanced.get("conversion_delete_input_sequence")))
@@ -224,6 +240,8 @@ class SettingsDialog(RoundedWindow, QDialog):
 
         advanced["delete_incomplete_fb"] = self.delete_incomplete.isChecked()
         advanced["exr_acescg"] = self.exr_acescg.isChecked()
+        advanced["exr_compression"] = self.exr_compression.currentData()
+        advanced["video_audio"] = self.video_audio.isChecked()
         advanced["true_resolution"] = self.true_resolution.currentData()
         advanced["conversion_delete_input_sequence"] = self.delete_input.isChecked()
         advanced["open_after"] = self.open_after.currentData()

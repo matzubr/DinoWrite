@@ -49,6 +49,15 @@ def test_acescg_option_is_saved(dialog, tmp_path):
     assert stored == {"advanced": {"exr_acescg": False}}
 
 
+def test_compression_and_audio_options_are_saved(dialog, tmp_path):
+    assert dialog.exr_compression.currentData() == "dwaa" and dialog.video_audio.isChecked()
+    dialog.exr_compression.setCurrentIndex(dialog.exr_compression.findData("zip"))
+    dialog.video_audio.setChecked(False)
+    dialog.save()
+    stored = json.loads((tmp_path / "user_settings.json").read_text())
+    assert stored == {"advanced": {"exr_compression": "zip", "video_audio": False}}
+
+
 def test_validation_errors(dialog):
     dialog.fb_name.setText("{name}.{version}.{fileformat}")
     dialog.resolutions.setPlainText("1920 1080\nwide")
