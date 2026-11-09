@@ -60,7 +60,8 @@ def ocio_viewer(monkeypatch, hou):
     monkeypatch.setattr(hou, "Color", SimpleNamespace(ocio_spaces=lambda: ("ACEScg", "Linear Rec.709 (sRGB)"),
                                                       ocio_configPath=lambda: "config.ocio"), raising=False)
     monkeypatch.setattr(acescg, "findOiiotool", lambda custom="": "hoiiotool")
-    monkeypatch.setattr(acescg, "bakeTransform", lambda config, display, view, ctf: Path(ctf).write_text("ctf"))
+    monkeypatch.setattr(acescg, "bakeTransform",
+                        lambda config, display, view, ctf, **kwargs: Path(ctf).write_text("ctf"))
     return SimpleNamespace(usingOCIO=lambda: True, getOCIODisplay=lambda: "Rec.1886 Rec.709 - Display",
                            getOCIOView=lambda: "ACES 1.0 - SDR Video")
 
@@ -331,7 +332,65 @@ def test_read_colorspace_for_nuke(ocio_viewer):
     assert acescg.readColorspace("exr", ocio_viewer, acescg_on=False)[0] == "Linear Rec.709"
     assert acescg.readColorspace("exr", ocio_viewer, keeps_exr=False)[0] == "temporary"
     name, how = acescg.readColorspace("png", ocio_viewer)
-    assert name == "ACES 1.0 - SDR Video" and "Rec.1886 Rec.709 - Display" in how
+    assert name == "matte_paint" and "Rec.1886 Rec.709 - Display" in how
+    assert acescg.readColorspace("png", ocio_viewer, matte_on=False)[0] == "ACES 1.0 - SDR Video"
+    assert acescg.readColorspace("png", ocio_viewer, keeps_exr=False)[0] == "temporary"
     no_ocio = SimpleNamespace(usingOCIO=lambda: False)
     assert acescg.readColorspace("jpg", no_ocio)[0] == "sRGB"
     assert acescg.readColorspace("exr", no_ocio)[0] == "Linear Rec.709"
+
+
+def _pngSequence(sequence):
+    for frame in sequence.parent.glob("shot.v001.*.exr"):
+        frame.rename(frame.with_suffix(".png"))
+    return sequence.with_suffix(".png")
+
+
+def test_png_converted_to_matte_paint_after_the_video(settings, sequence, tools, ocio_viewer, monkeypatch):
+    from DinoWrite.core import acescg
+    baked = []
+    monkeypatch.setattr(acescg, "bakeTransform",
+                        lambda config, display, view, ctf, **kwargs: baked.append(kwargs) or Path(ctf).write_text("c"))
+    settings["advanced"]["conversion_delete_input_sequence"] = False
+    png = _pngSequence(sequence)
+    job = _run(_acescgJob(settings, png, ocio_viewer, convert_video=True))
+    assert job.succeeded and baked == [{"target": "matte_paint", "linearized": False}], "screen pixels, no sRGB step"
+    encode, convert, *_ = tools.launched
+    assert "-c:v" in encode.cmds[0], "video first, from the recorded PNG"
+    cmd = convert.cmds[0]
+    assert cmd[cmd.index("oiio:ColorSpace") + 1] == "matte_paint"
+    assert cmd[cmd.index("-d") + 1] == "uint8" and "--compression" not in cmd
+    assert job.exrLabel() == "PNG -> matte_paint"
+    assert (png.parent / "shot.v001.1005.png").read_text() == "acescg", "originals replaced"
+
+
+def test_png_kept_as_is_without_matte_paint(settings, sequence, tools, ocio_viewer):
+    png = _pngSequence(sequence)
+    settings["advanced"]["ldr_matte_paint"] = False
+    job = _acescgJob(settings, png, ocio_viewer, convert_video=False)
+    assert not job.hasWork and not job.exr_commands
+    settings["advanced"]["ldr_matte_paint"] = True
+    no_ocio = SimpleNamespace(usingOCIO=lambda: False)
+    assert not _acescgJob(settings, png, no_ocio, convert_video=False).exr_commands, "nothing to rewrite"
+
+
+def test_jpg_keeps_quality():
+    from DinoWrite.core import acescg
+    assert acescg.outputArgs(".jpg") == ["--compression", "jpeg:95", "-d", "uint8"]
+    assert acescg.outputArgs("exr", "zip") == ["--compression", "zip", "-d", "half"]
+
+
+def test_baked_matte_paint_transform_round_trips_in_nuke(tmp_path):
+    """Real OCIO: screen PNG -> ctf -> matte_paint (ACEScct); Nuke reads matte_paint, views ACES SDR: same pixels"""
+    OCIO = pytest.importorskip("PyOpenColorIO")
+    from DinoWrite.core import acescg
+    config = "ocio://cg-config-v2.1.0_aces-v1.3_ocio-v2.3"
+    display, view = "sRGB - Display", "ACES 1.0 - SDR Video"
+    ctf = acescg.bakeTransform(config, display, view, tmp_path / "t.ctf", target="matte_paint", linearized=False)
+    cfg = OCIO.Config.CreateFromFile(config)
+    screen = [0.05, 0.05, 0.05, 0.5, 0.4, 0.3, 0.95, 0.95, 0.95]
+    stored = cfg.getProcessor(OCIO.FileTransform(src=str(ctf))).getDefaultCPUProcessor().applyRGB(list(screen))
+    stored = [round(min(max(v, 0), 1) * 255) / 255 for v in stored]  # 8-bit file
+    nuke = cfg.getProcessor("matte_paint", display, view, OCIO.TRANSFORM_DIR_FORWARD).getDefaultCPUProcessor()
+    back = nuke.applyRGB(list(stored))
+    assert all(abs(a - b) < 3 / 255 for a, b in zip(back, screen)), back

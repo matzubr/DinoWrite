@@ -119,8 +119,8 @@ the viewport as seen.
 
 The File Format menu shows the colorspace each format is written in, the tooltip says how to read it in Nuke:
 `exr (ACEScg)`, `exr (Linear Rec.709)` when ACEScg is off or not possible, `exr (temporary)` when the sequence is
-deleted after the video, `png`/`jpg (<viewer view>)`: the viewport look as is (e.g. `ACES 1.0 - SDR Video`), `sRGB`
-without OCIO.
+deleted after the video, `png`/`jpg (matte_paint)`: converted for Nuke (below), `png`/`jpg (<viewer view>)` when that
+is off or not possible: the viewport look as is (e.g. `ACES 1.0 - SDR Video`), `sRGB` without OCIO.
 
 - **Video** is encoded from the recorded EXR with the sRGB curve (like "EXR Transfer Func" of the FFmpeg Encode Video
   TOP): it looks like MPlay right after recording. JPG/PNG are encoded as is. Tagged BT.709 / sRGB.
@@ -130,6 +130,14 @@ without OCIO.
   as the Houdini viewer: the picture is the same as in the viewport. Highlights are limited to what was on screen,
   it's a preview, not a render. Skipped when the viewer doesn't use OCIO, the config isn't an ACES one,
   hoiiotool or PyOpenColorIO aren't found, or the sequence is deleted after the video. If it fails, the EXR stay as recorded.
+
+- **PNG/JPG → matte_paint** (`advanced.ldr_matte_paint`, on by default, Settings → General): Nuke reads 8-bit files as
+  the OCIO role `matte_paint` by default, so the kept PNG/JPG are converted into it the same way (inverse of the
+  viewer's display/view → ACEScg → matte_paint, after the video is encoded from the recorded files). In Nuke just
+  Read them and view with the same display/view as the Houdini viewer. In the ACES 1.3 configs since cg-config v2.1
+  `matte_paint` is ACEScct: highlights are kept, the error is about 1/255. In older configs (cg-config v1, Nuke's
+  `aces_1.2`) it's sRGB - Texture, which can't hold anything brighter than scene 1.0: the brightest parts come out
+  greyish. Other image viewers show the files flat, use the video there.
 
 - **EXR compression** (`advanced.exr_compression`: `dwaa` default, `zip`, `piz`, `none`): applied in the same
   hoiiotool pass, also when ACEScg is off or not possible.

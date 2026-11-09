@@ -495,6 +495,8 @@ class DinoWriter(RoundedWindow, QWidget):
             exr = (["ACEScg"] if advanced.get("exr_acescg", True) else []) + [
                 acescg.compressionArg(advanced.get("exr_compression", "dwaa")).split(":")[0].upper()]
             parts.append("EXR: " + ", ".join(exr))
+        elif self.fileFormat() in acescg.LDR_EXTS and keeps_exr and advanced.get("ldr_matte_paint", True):
+            parts.append(f"{self.fileFormat().upper()}: {acescg.MATTE_PAINT}")
         animation.setTextAnimated(self.videoline, " · ".join(parts))
 
     def aspectWarning(self) -> str:
@@ -555,7 +557,8 @@ class DinoWriter(RoundedWindow, QWidget):
         viewer = getattr(self.hou_viewport, "getPaneTab", lambda: None)()
         for index in range(self.fileformat.count()):
             ext = self.fileformat.itemData(index)
-            name, how = acescg.readColorspace(ext, viewer, advanced.get("exr_acescg", True), keeps_exr)
+            name, how = acescg.readColorspace(ext, viewer, advanced.get("exr_acescg", True), keeps_exr,
+                                              advanced.get("ldr_matte_paint", True))
             self.fileformat.setItemText(index, f"{ext}  ({name})")
             self.fileformat.setItemData(index, how, Qt.ToolTipRole)
         self.fileformat.setToolTip(self.fileformat.currentData(Qt.ToolTipRole) or "")

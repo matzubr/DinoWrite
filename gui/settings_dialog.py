@@ -215,6 +215,13 @@ class SettingsDialog(RoundedWindow, QDialog):
             "After recording, the kept EXR are converted from the viewport look back to ACEScg\n"
             "(inverse of the viewer's OCIO display/view, hoiiotool 2.5+). A viewer with the same\n"
             "display/view shows exactly what the viewport showed. Off: EXR stay as recorded.")
+        self.ldr_matte_paint = widgets.CheckBox("Convert PNG/JPG to matte_paint (for Nuke)")
+        self.ldr_matte_paint.setToolTip(
+            "Nuke reads 8-bit files as the OCIO role matte_paint by default: converted to it, PNG/JPG\n"
+            "look like the Houdini viewport there with no Read node changes (same view in the viewer).\n"
+            "matte_paint is ACEScct in the ACES 1.3 configs since cg-config v2.1, sRGB - Texture in older ones\n"
+            "(the brightest parts come out greyish). Other image viewers show the files flat: use the video.\n"
+            "Off: PNG/JPG stay the viewport look as is.")
         self.exr_compression = QComboBox()
         for key, label in EXR_COMPRESSION:
             self.exr_compression.addItem(label, key)
@@ -264,7 +271,8 @@ class SettingsDialog(RoundedWindow, QDialog):
                            ("", self.name_preview),
                            ("Video extension", self.fb_video_ext)]),
             self._section([("Record viewer", self.true_resolution), ("", self.delete_incomplete)]),
-            self._section([("EXR compression", self.exr_compression), ("", self.exr_acescg)]))
+            self._section([("EXR compression", self.exr_compression), ("", self.exr_acescg),
+                           ("", self.ldr_matte_paint)]))
 
     def _videoTab(self) -> QWidget:
         self.delete_input = widgets.CheckBox("Delete image sequence after successful conversion")
@@ -424,6 +432,7 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.fb_video_ext.setCurrentText(paths.get("fb_video_ext", "mov"))
         self.delete_incomplete.setChecked(bool(advanced.get("delete_incomplete_fb")))
         self.exr_acescg.setChecked(bool(advanced.get("exr_acescg", True)))
+        self.ldr_matte_paint.setChecked(bool(advanced.get("ldr_matte_paint", True)))
         self.exr_compression.setCurrentIndex(max(self.exr_compression.findData(advanced.get("exr_compression", "dwaa")), 0))
         self.video_audio.setChecked(bool(advanced.get("video_audio", True)))
         self.true_resolution.setCurrentIndex(max(self.true_resolution.findData(advanced.get("true_resolution", "auto")), 0))
@@ -459,6 +468,7 @@ class SettingsDialog(RoundedWindow, QDialog):
 
         advanced["delete_incomplete_fb"] = self.delete_incomplete.isChecked()
         advanced["exr_acescg"] = self.exr_acescg.isChecked()
+        advanced["ldr_matte_paint"] = self.ldr_matte_paint.isChecked()
         advanced["exr_compression"] = self.exr_compression.currentData()
         advanced["video_audio"] = self.video_audio.isChecked()
         advanced["true_resolution"] = self.true_resolution.currentData()

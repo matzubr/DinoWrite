@@ -12,6 +12,8 @@ Stages (each one optional):
     exr    - hoiiotool rewrites the kept EXR in place: ACEScg with a baked OCIO transform (see
              core/acescg.py), DWAA compression, the passport in the header. Several processes on parts
              of the frame range. Skipped when the sequence is deleted after the video.
+             Kept PNG/JPG: the same pass into the OCIO role matte_paint (Nuke's default for 8-bit),
+             only when that transform is possible.
 """
 import os
 import shutil
@@ -66,18 +68,22 @@ class ConversionJob:
         self.convert_video = convert_video
         self.video = videoPath(self.sequence, frame_padding, video_ext) if convert_video else None
         self.delete_input = convert_video and bool(advanced.get("conversion_delete_input_sequence"))
-        is_exr = self.sequence.suffix.lower() == ".exr"
+        self.ext = self.sequence.suffix.lower().lstrip(".")
+        is_exr = self.ext == "exr"
+        is_ldr = self.ext in acescg.LDR_EXTS
         self.temp_folder = self.sequence.parent / EXR_TEMP_FOLDER
         fps = hou.fps()
 
-        self._exr_dir = tempfile.TemporaryDirectory(prefix="dinowrite_exr_") if is_exr else None
-        ctf = Path(self._exr_dir.name) / acescg.CTF_NAME if is_exr else None
-        display_view = None
-        if is_exr and advanced.get("exr_acescg", True) and not self.delete_input:
-            display_view = acescg.plan(scene_viewer, ctf)
-        self.acescg = bool(display_view)
+        recolor = not self.delete_input and (
+            (is_exr and advanced.get("exr_acescg", True)) or (is_ldr and advanced.get("ldr_matte_paint", True)))
+        self._exr_dir = tempfile.TemporaryDirectory(prefix="dinowrite_exr_") if (is_exr or is_ldr) else None
+        ctf = Path(self._exr_dir.name) / acescg.CTF_NAME if self._exr_dir else None
+        display_view = acescg.plan(scene_viewer, ctf, self.ext) if recolor else None
+        self.acescg = bool(display_view) and is_exr
+        self.matte_paint = bool(display_view) and is_ldr
+        self.target_colorspace = acescg.MATTE_PAINT if is_ldr else acescg.ACESCG_NAME
         if display_view:
-            log.info("EXR -> ACEScg: inverse of '%s' / '%s'", *display_view)
+            log.info("%s -> %s: inverse of '%s' / '%s'", self.ext.upper(), self.target_colorspace, *display_view)
 
         scene_audio = audio.sceneAudio() if convert_video and advanced.get("video_audio", True) else None
         self.passport = passport.collect(camera, self.frame_range, resolution,
@@ -109,15 +115,16 @@ class ConversionJob:
         # Kept EXR: ACEScg, compression, passport in one hoiiotool pass
         self.exr_commands = []
         self.compression = acescg.compressionArg(advanced.get("exr_compression", "dwaa"))
-        tool = acescg.findOiiotool(advanced.get("oiiotool_path", "")) if is_exr and not self.delete_input else ""
-        if is_exr and not self.delete_input and not tool:
-            log.warning("EXR kept as recorded: hoiiotool/oiiotool not found")
+        rewrite = not self.delete_input and (is_exr or self.matte_paint)  # PNG/JPG only to change the colors
+        tool = acescg.findOiiotool(advanced.get("oiiotool_path", "")) if rewrite else ""
+        if rewrite and not tool:
+            log.warning("%s kept as recorded: hoiiotool/oiiotool not found", self.ext.upper())
         if tool:
             pattern = self.sequence.name.replace(frame_padding, "#")
             self.exr_commands = acescg.commands(
                 tool, (self.sequence.parent / pattern).as_posix(), (self.temp_folder / pattern).as_posix(),
-                self.frame_range, self.padding, ctf.as_posix() if self.acescg else "",
-                self.compression, passport.oiiotoolArgs(self.passport))
+                self.frame_range, self.padding, ctf.as_posix() if display_view else "",
+                self.compression, passport.oiiotoolArgs(self.passport), self.target_colorspace)
 
         self.stage = PENDING
         self.error = ""
@@ -208,7 +215,7 @@ class ConversionJob:
                 log.info("%s: %s", self.exrLabel(), self.sequence.parent)
                 self._finish(DONE)
             else:
-                self._finish(FAILED, f"{self.exrLabel()} failed, EXR kept as recorded")
+                self._finish(FAILED, f"{self.exrLabel()} failed, {self.ext.upper()} kept as recorded")
         return self.finished
 
     def cancel(self):
@@ -255,7 +262,9 @@ class ConversionJob:
             self._finish(DONE)
 
     def exrLabel(self) -> str:
-        """EXR -> ACEScg, DWAA"""
+        """EXR -> ACEScg, DWAA / PNG -> matte_paint"""
+        if self.ext != "exr":
+            return f"{self.ext.upper()} -> {acescg.MATTE_PAINT}"
         parts = (["ACEScg"] if self.acescg else []) + [self.compression.split(":")[0].upper()]
         return "EXR -> " + ", ".join(parts)
 
