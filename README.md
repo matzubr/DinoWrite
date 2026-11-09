@@ -72,7 +72,7 @@ Click the gear button in the window title. Tabs:
 
 | tab | what |
 |---|---|
-| General | flipbooks folder (folder button: Houdini file browser, keeps `$HIP`/`$JOB`), file name template (click a variable chip to insert it, the line below shows what it turns into), video extension, recording viewer, EXR compression, incomplete flipbook cleanup, ACEScg |
+| General | flipbooks folder (folder button: choose it, `$JOB`/`$HIP` are put back into the path; arrow button: open it), file name template (click a variable chip to insert it, the line below shows what it turns into), video extension, recording viewer, EXR compression, incomplete flipbook cleanup, ACEScg |
 | Video | what to open after writing, scene audio, sequence cleanup; shows which ffmpeg and encoders are found |
 | Presets | resolution and frame range presets for the dropdown menus |
 
