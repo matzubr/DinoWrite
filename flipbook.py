@@ -176,9 +176,48 @@ def openCommand(path: Path, select: bool = False, platform: str = sys.platform):
     return ["xdg-open", str(path.parent if select else path)]
 
 
-def openPath(path: Path, select: bool = False):
+def explorerSelect(path: Path) -> bool:
+    """Windows: show path selected in Explorer through the shell API, which reuses a window that already shows
+    that folder (explorer /select opens a new window every time). False when it can't (the caller falls back)."""
     try:
-        subprocess.Popen(openCommand(path, select), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        import ctypes
+        from ctypes import wintypes
+
+        shell32, ole32 = ctypes.windll.shell32, ctypes.windll.ole32
+        shell32.ILCreateFromPathW.restype = ctypes.c_void_p
+        shell32.ILCreateFromPathW.argtypes = [wintypes.LPCWSTR]
+        shell32.SHOpenFolderAndSelectItems.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.c_void_p,
+                                                       wintypes.DWORD]
+        shell32.ILFree.argtypes = [ctypes.c_void_p]
+        initialized = ole32.CoInitializeEx(None, 0x2) in (0, 1)  # apartment threaded; 1: already initialized
+        try:
+            pidl = shell32.ILCreateFromPathW(str(Path(path).resolve()))
+            if not pidl:
+                return False
+            try:
+                return shell32.SHOpenFolderAndSelectItems(pidl, 0, None, 0) == 0
+            finally:
+                shell32.ILFree(pidl)
+        finally:
+            if initialized:
+                ole32.CoUninitialize()
+    except Exception as e:  # noqa: BLE001 - no ctypes/shell: explorer command instead
+        log.warning("Can't show %s in Explorer: %s", path, e)
+        return False
+
+
+def openPath(path: Path, select: bool = False, platform: str = sys.platform):
+    if platform == "win32":
+        path = Path(path)
+        if not select and path.is_dir():
+            # a folder: its first item selected, so an open window with this folder is reused too
+            first = next(iter(sorted(path.iterdir())), None) if path.exists() else None
+            if first is not None:
+                path, select = first, True
+        if select and explorerSelect(path):
+            return
+    try:
+        subprocess.Popen(openCommand(path, select, platform), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, **NO_WINDOW)
     except OSError as e:
         log.warning("Can't open %s: %s", path, e)

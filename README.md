@@ -26,7 +26,8 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
    the sequence otherwise; hover it for the full path. The details slide out with the "Details ▾" button (closed by
    default, remembered); while they're closed, a warning (stretched aspect, not enough disk space) colors the button
  - WRITE is the accent (gold) button, like Save in the settings
- - Opens the result when done: the converted video and its folder (with the video selected), or only one of them
+ - Opens the result when done: the converted video and its folder (with the video selected), or only one of them.
+   On Windows an Explorer window that already shows the folder is reused instead of opening a new one every time
  - Settings dialog behind the gear button, your settings survive tool updates
  - Remembers last used values
  - Wider window for long names: drag its left or right edge (the width is remembered)

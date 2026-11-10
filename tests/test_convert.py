@@ -433,3 +433,21 @@ def test_overwriting_a_version_removes_its_old_frames_and_video(tmp_path):
     (folder / "notes.txt").write_text("keep")
     flipbook.removeOldVersion(folder / "shot.v002.$F4.exr", "$F4", "mov")
     assert [p.name for p in folder.iterdir()] == ["notes.txt"]
+
+
+def test_windows_shows_the_result_in_an_open_explorer_window(monkeypatch, tmp_path):
+    from DinoWrite import flipbook
+
+    shown, commands = [], []
+    monkeypatch.setattr(flipbook, "explorerSelect", lambda path: shown.append(path) or True)
+    monkeypatch.setattr(flipbook.subprocess, "Popen", lambda cmd, **kw: commands.append(cmd))
+    video = tmp_path / "shot.v001.mov"
+    video.write_text("x")
+    flipbook.openPath(video, select=True, platform="win32")
+    flipbook.openPath(tmp_path, platform="win32")  # a folder: its first item selected (reuses the window too)
+    assert shown == [video, video] and commands == []
+
+    monkeypatch.setattr(flipbook, "explorerSelect", lambda path: False)  # shell API failed: explorer /select
+    flipbook.openPath(video, select=True, platform="win32")
+    flipbook.openPath(video, platform="win32")  # the video itself: the player, not Explorer
+    assert commands == [f'explorer /select,"{video}"', ["explorer", str(video)]]
