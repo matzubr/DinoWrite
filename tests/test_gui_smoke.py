@@ -244,3 +244,27 @@ def test_convert_to_video_offers_video_formats(houdini):
     window.convertvideo.setChecked(True)
     assert window.fileformat.currentData() == "mp4", "remembered"
     window.close()
+
+
+def test_version_steps_and_warns_about_overwriting(houdini, hou, monkeypatch, tmp_path):
+    import DinoWrite
+
+    window = DinoWrite.show({})
+    window.paths["fb_folder"] = (tmp_path / "{name}").as_posix()
+    monkeypatch.setattr(hou, "text", type("T", (), {"expandString": staticmethod(lambda s: s)}), raising=False)
+    for version in ("v001", "v002"):
+        (tmp_path / "shot" / version).mkdir(parents=True)
+    (tmp_path / "shot" / "v002" / "shot.v002.1001.exr").write_text("x")
+    window.filename.setText("shot")
+    window.updateStatus()
+    assert window.versionbox.label.text() == "v003" and not window.versionbox.plus.isEnabled()
+    window.versionbox.minus.click()
+    assert window.versionbox.label.text() == "v002" and window.collectData()["version"] == "v002"
+    assert "v002 exists (1 file): will be overwritten" in window.statusline.text()
+    assert "v002" in window.seqname.fullText()
+    window.versionbox.plus.click()
+    assert window.collectData()["version"] == "", "back at the next free one: automatic"
+    window.versionbox.minus.click()
+    window.filename.setText("other")
+    assert window.collectData()["version"] == "", "another name starts automatic"
+    window.close()

@@ -51,13 +51,14 @@ def start(data,kwargs):
     if not write_folder.exists():
         write_folder.mkdir(parents=True, exist_ok=True)
 
-    # Get newer folder version of flipbook (only 'vNNN' folders, compared as numbers)
-    ver_str = helpers.nextVersion(write_folder)
+    # The version chosen in the window, or the next free one (only 'vNNN' folders, compared as numbers)
+    ver_str = data.get("version") or helpers.nextVersion(write_folder)
 
     # Set output filename
     filename = fb_name.format(
         name=file_name, version=ver_str, fileformat=file_format)
     output_filepath = write_folder / ver_str / filename
+    removeOldVersion(output_filepath, frame_padding, fb_video_ext)
 
     # Get Viewport
     viewport = HouViewport(kwargs)
@@ -130,6 +131,19 @@ def start(data,kwargs):
     from .gui.job_window import JobWindow
     JobWindow(job, on_finished=lambda: finished(job.video if job.video and job.video.exists() else None,
                                                 cancelled=job.stage == conversion.CANCELLED))
+
+
+def removeOldVersion(sequence: Path, frame_padding: str, video_ext: str):
+    """Writing over an existing version (confirmed in the window): its old frames and video go first,
+    so a shorter range doesn't leave old frames behind"""
+    old = conversion.sequenceFiles(sequence, frame_padding)
+    video = conversion.videoPath(sequence, frame_padding, video_ext)
+    if video.exists():
+        old.append(video)
+    for path in old:
+        path.unlink()
+    if old:
+        log.info("Overwriting %s: %d old files removed", sequence.parent.as_posix(), len(old))
 
 
 def openResult(open_after: str, video, sequence_folder: Path, write_folder: Path):

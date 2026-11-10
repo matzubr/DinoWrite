@@ -86,6 +86,36 @@ def flipbookVersion(fb_folder_template: str, flipbook_name: str) -> str:
     return nextVersion(fb_folder)
 
 
+def versionString(number: int, like: str = "") -> str:
+    """5 -> 'v005' (padding of 'like', at least VERSION_MIN_PADDING)"""
+    padding = max(VERSION_MIN_PADDING, len(like) - 1 if like.startswith("v") else 0)
+    return f"v{str(max(int(number), 1)).zfill(padding)}"
+
+
+def versionNumber(version: str) -> int:
+    """'v005' -> 5 (1 when it isn't a version)"""
+    match = VERSION_FOLDER_PATTERN.match(version or "")
+    return int(match[1]) if match else 1
+
+
+def versionFolder(fb_folder_template: str, flipbook_name: str, version: str) -> Path:
+    """Folder of one version of a flipbook: <paths.fb_folder>/vNNN"""
+    return Path(hou.text.expandString(fb_folder_template).format(name=flipbook_name)).resolve() / version
+
+
+def plural(count: int, word: str) -> str:
+    """1 file, 3 files"""
+    return f"{count} {word}" if count == 1 else f"{count} {word}s"
+
+
+def filesIn(folder: Path) -> int:
+    """Number of files in folder (0 when it doesn't exist)"""
+    try:
+        return sum(1 for item in folder.iterdir() if item.is_file())
+    except OSError:
+        return 0
+
+
 def formatBytes(size: float) -> str:
     """1536 -> '1.5 KB', 3.2e9 -> '3.0 GB'"""
     for unit in ("B", "KB", "MB", "GB"):

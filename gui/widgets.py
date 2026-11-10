@@ -274,6 +274,44 @@ class DropDownButton(AnimatedButton, QPushButton):
                 text = None
             action.setText(text or item)
 
+class VersionBox(QWidget):
+    """− v004 +: steps the flipbook version. Signals changed(step) with -1 / +1."""
+    changed = Signal(int)
+    LABEL_STYLE = ("QLabel { background-color: #131313; color: #eee; border: 1px solid #343434; border-radius: 2px;"
+                   " padding: 3px; }")
+
+    def __init__(self, font: str = MAIN_FONT, size: int = MAIN_SIZE, parent=None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(3)
+        self.minus = PushButton("−", size=size)
+        self.plus = PushButton("+", size=size)
+        self.label = QLabel("v001")
+        self.label.setFont(QFont(font, size))
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setStyleSheet(self.LABEL_STYLE)
+        self.label.setMinimumWidth(1)
+        for button, step, tip in ((self.minus, -1, "Previous version: write over it"),
+                                  (self.plus, 1, "Next version (the next free one is the default)")):
+            button.setFixedSize(QSize(22, 22))
+            button.setCursor(Qt.PointingHandCursor)
+            button.setToolTip(tip)
+            button.clicked.connect(lambda checked=False, step=step: self.changed.emit(step))
+        layout.addWidget(self.minus)
+        layout.addWidget(self.label, 1)
+        layout.addWidget(self.plus)
+
+    def show(self, version: str, color: str = "", bold: bool = False, tooltip: str = ""):
+        """Shown version, its color (orange: exists and will be overwritten), bold when chosen by hand"""
+        self.label.setText(version)
+        font = self.label.font()
+        font.setBold(bold)
+        self.label.setFont(font)
+        self.label.setStyleSheet(self.LABEL_STYLE + (f"QLabel {{ color: {color}; border-color: {color}; }}" if color else ""))
+        self.label.setToolTip(tooltip)
+
+
 class SideImageMenu(QMenu):
     """Menu with one picture on the right of a group of items, as tall as the group (the knife dino next to
     1/2, 2/3, ×2, ×3): a menu item icon is limited to one small row."""

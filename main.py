@@ -211,8 +211,14 @@ class DinoWriter(RoundedWindow, QWidget):
         self.filename.installEventFilter(self)
         self.menu_button = widgets.DropDownButton(menu=folders_list, callback=self.setMenuItemFile)
 
+        # Version: the next free one by default, − / + to pick another (an existing one is overwritten)
+        self.version_choice = None
+        self.versionbox = widgets.VersionBox()
+        self.versionbox.changed.connect(self.stepVersion)
+
         grid_layout.addWidget(label_filename, 0, 0)
-        grid_layout.addWidget(self.filename, 0, 1, 1, 2)
+        grid_layout.addWidget(self.filename, 0, 1)
+        grid_layout.addWidget(self.versionbox, 0, 2)
         grid_layout.addWidget(self.menu_button, 0, 3)
 
         ### SECOND LINE
@@ -347,6 +353,7 @@ class DinoWriter(RoundedWindow, QWidget):
         self.frame_menu.menu.triggered.connect(self.updateRamUsage)
         self.convertvideo.stateChanged.connect(self.updateFileFormat)
         self.writebutton.clicked.connect(self.main)
+        self.filename.textChanged.connect(self.resetVersion)
         self.filename.textChanged.connect(self.updateStatus)
         for line in (self.resx, self.resy):
             line.editingFinished.connect(self.updateStatus)
@@ -471,7 +478,8 @@ class DinoWriter(RoundedWindow, QWidget):
                                     (f"QLineEdit {{border: 1px solid {COLORS_PALLETE['red']};}}" if problem else ""))
         self.writebutton.setEnabled(not problem)
         self.writebutton.setToolTip(problem)
-        warning = "" if problem else self.aspectWarning()
+        self.updateVersion()
+        warning = "" if problem else (self.overwriteWarning() or self.aspectWarning())
         status_color = COLORS_PALLETE["crimson"] if problem else (COLORS_PALLETE["orange"] if warning else "#ffffff")
         self.statusline.setStyleSheet(f"background-color: transparent; color: {status_color};")
         self.statusline.setExtraToolTip(
@@ -496,6 +504,57 @@ class DinoWriter(RoundedWindow, QWidget):
             if target:
                 parts.append(f"{self.fileFormat().upper()}: {target}")
         animation.setTextAnimated(self.videoline, " · ".join(parts))
+
+    # ---------- version ----------
+
+    def autoVersion(self) -> str:
+        """The next free version of this flipbook name"""
+        return helpers.flipbookVersion(self.paths.get("fb_folder"), self.filename.text())
+
+    def currentVersion(self) -> str:
+        return self.version_choice or self.autoVersion()
+
+    def stepVersion(self, step: int):
+        """− / +: from the shown version; back at the next free one it's automatic again"""
+        auto = self.autoVersion()
+        number = min(max(helpers.versionNumber(self.currentVersion()) + step, 1), helpers.versionNumber(auto))
+        version = helpers.versionString(number, auto)
+        self.version_choice = None if version == auto else version
+        self.updateColorfulLabel()
+        self.updateStatus()
+
+    def resetVersion(self):
+        """Another name: its own next free version"""
+        self.version_choice = None
+
+    def existingFiles(self) -> int:
+        """Files already in the folder of the version that will be written"""
+        if not self.version_choice:
+            return 0
+        return helpers.filesIn(helpers.versionFolder(self.paths.get("fb_folder"), self.filename.text(),
+                                                     self.version_choice))
+
+    def overwriteWarning(self) -> str:
+        files = self.existingFiles()
+        return f"{self.version_choice} exists ({helpers.plural(files, 'file')}): will be overwritten" if files else ""
+
+    def updateVersion(self):
+        try:
+            auto = self.autoVersion()
+        except Exception as e:  # noqa: BLE001 - unexpandable folder: the version box must not break the window
+            log.warning("Can't find the next version: %s", e)
+            auto = "v001"
+        version = self.version_choice or auto
+        files = self.existingFiles()
+        if files:
+            color, tip = COLORS_PALLETE["orange"], f"{version} already has {helpers.plural(files, 'file')}: they will be overwritten"
+        elif self.version_choice:
+            color, tip = "", f"{version} chosen by hand (the next free one is {auto})"
+        else:
+            color, tip = "", f"{version}: the next free version. − to write over an older one"
+        self.versionbox.show(version, color, bold=bool(self.version_choice), tooltip=tip)
+        self.versionbox.minus.setEnabled(helpers.versionNumber(version) > 1)
+        self.versionbox.plus.setEnabled(bool(self.version_choice))
 
     def aspectWarning(self) -> str:
         """Resolution with another aspect than the camera: the flipbook comes out squashed/stretched"""
@@ -598,7 +657,7 @@ class DinoWriter(RoundedWindow, QWidget):
         final_list = label
 
         fb_name = self.paths.get("fb_name")
-        version = helpers.flipbookVersion(self.paths.get("fb_folder"), self.filename.text())
+        version = self.currentVersion()
         for name in fb_name.split("."):
             part = name.format(name=self.filename.text(),
                                 version=version,
@@ -790,6 +849,13 @@ class DinoWriter(RoundedWindow, QWidget):
         if not self.confirmFlipbooksRoot():
             return 0
 
+        files = self.existingFiles()
+        if files and hou.ui.displayMessage(
+                f"{self.filename.text()} {self.version_choice} already has {helpers.plural(files, 'file')}.\n\n"
+                "Overwrite it? Its frames and video are replaced.",
+                buttons=("Overwrite", "Cancel"), default_choice=1, close_choice=1, title="DinoWrite") != 0:
+            return 0
+
         data = self.saveState()
 
         # WRITE grows and fades out together with the window (HotBox style), then recording starts
@@ -812,6 +878,7 @@ class DinoWriter(RoundedWindow, QWidget):
             "frameend": self.frameend.text(),
             "fileformat": self.fileFormat(),
             "picformat": self.pic_ext,
+            "version": self.version_choice or "",  # chosen by hand (not restored: next time starts automatic)
             "videoext": self.video_ext,
             "convertvideo": self.convertvideo.isChecked(),
             "blackbg": self.blackbackground.isChecked(),

@@ -420,3 +420,14 @@ def test_ldr_colorspace_detected_from_the_config(monkeypatch):
     monkeypatch.setattr(acescg, "configInfo", lambda path=None: {})
     assert acescg.ldrColorspace("auto")[0] == ""
     assert acescg.ldrColorspace("acescct")[0] == "ACEScct"
+
+
+def test_overwriting_a_version_removes_its_old_frames_and_video(tmp_path):
+    folder = tmp_path / "v002"
+    folder.mkdir()
+    for frame in range(1001, 1021):
+        (folder / f"shot.v002.{frame}.exr").write_text("old")
+    (folder / "shot.v002.mov").write_text("old")
+    (folder / "notes.txt").write_text("keep")
+    flipbook.removeOldVersion(folder / "shot.v002.$F4.exr", "$F4", "mov")
+    assert [p.name for p in folder.iterdir()] == ["notes.txt"]
