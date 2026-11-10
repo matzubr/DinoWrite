@@ -510,7 +510,7 @@ class DinoWriter(WidthResizable, RoundedWindow, QWidget):
         keeps_exr = not (self.convertvideo.isChecked() and advanced.get("conversion_delete_input_sequence"))
         if self.fileFormat() == "exr" and keeps_exr:
             exr = (["ACEScg"] if advanced.get("exr_acescg", True) else []) + [
-                acescg.compressionArg(advanced.get("exr_compression", "dwaa")).split(":")[0].upper()]
+                acescg.compressionArg(advanced.get("exr_compression", acescg.DEFAULT_COMPRESSION)).split(":")[0].upper()]
             parts.append("EXR: " + ", ".join(exr))
         elif self.fileFormat() in acescg.LDR_EXTS and keeps_exr and advanced.get("ldr_matte_paint", True):
             target = acescg.ldrColorspace(advanced.get("ldr_colorspace", "auto"))[0]

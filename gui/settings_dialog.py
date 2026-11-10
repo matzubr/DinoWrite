@@ -13,7 +13,8 @@ from .qt import *  # noqa: F403
 from .resources import ICONS_FOLDER
 from .theme import COLORS, PRIMARY_STYLE, STATES
 
-EXR_COMPRESSION = (("dwaa", "DWAA (small, for previews)"), ("zip", "ZIP (lossless)"),
+EXR_COMPRESSION = (("dwaa_fine", "DWAA fine details (default)"), ("dwaa", "DWAA smallest (softer details)"),
+                   ("zip", "ZIP (lossless)"),
                    ("piz", "PIZ (lossless, grainy images)"), ("none", "None"))
 # (key, short text, full text in the item tooltip)
 TRUE_RESOLUTION = (
@@ -271,7 +272,9 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.exr_compression.setToolTip(
             "Kept EXR are rewritten after recording (hoiiotool) with this compression and the flipbook\n"
             "passport in the header (hip, camera, frame range...: Nuke Read -> Metadata).\n"
-            "DWAA: several times smaller, visually lossless for a preview, fast in Nuke.")
+            "DWAA: several times smaller than ZIP/PIZ, fast in Nuke. 'Fine details' (level 15) keeps thin lines\n"
+            "and particles sharp; 'smallest' (level 45, the OpenEXR default) is ~30% smaller but softer.\n"
+            "ZIP / PIZ: lossless, bigger.")
         self.true_resolution = QComboBox()
         for key, label, tip in TRUE_RESOLUTION:
             self.true_resolution.addItem(label, key)
@@ -532,7 +535,7 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.ldr_matte_paint.setChecked(bool(advanced.get("ldr_matte_paint", True)))
         self.ldr_colorspace.setCurrentIndex(max(self.ldr_colorspace.findData(advanced.get("ldr_colorspace", "auto")), 0))
         self.ldr_colorspace.setEnabled(self.ldr_matte_paint.isChecked())
-        self.exr_compression.setCurrentIndex(max(self.exr_compression.findData(advanced.get("exr_compression", "dwaa")), 0))
+        self.exr_compression.setCurrentIndex(max(self.exr_compression.findData(advanced.get("exr_compression", acescg.DEFAULT_COMPRESSION)), 0))
         self.video_audio.setChecked(bool(advanced.get("video_audio", True)))
         self.true_resolution.setCurrentIndex(max(self.true_resolution.findData(advanced.get("true_resolution", "auto")), 0))
 

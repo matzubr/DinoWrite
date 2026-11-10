@@ -289,7 +289,7 @@ def test_exr_pass_compression_and_passport(settings, sequence, tools, ocio_viewe
     monkeypatch.setattr(hou, "hipFile", SimpleNamespace(path=lambda: "/shots/sh010/fx.v012.hip"), raising=False)
     job = _acescgJob(settings, sequence, ocio_viewer, convert_video=False)
     cmd = job.exr_commands[0]
-    assert cmd[cmd.index("--compression") + 1] == "dwaa:45"
+    assert cmd[cmd.index("--compression") + 1] == "dwaa:15", "fine details by default"
     assert cmd[cmd.index("dinowrite:hip") + 1] == "/shots/sh010/fx.v012.hip"
     assert job.exrLabel() == "EXR -> ACEScg, DWAA"
     settings["advanced"]["exr_compression"] = "zip"
@@ -380,7 +380,9 @@ def test_png_kept_as_is_without_matte_paint(settings, sequence, tools, ocio_view
 
 def test_jpg_keeps_quality():
     from DinoWrite.core import acescg
-    assert acescg.outputArgs(".jpg") == ["--compression", "jpeg:95", "-d", "uint8"]
+    assert acescg.outputArgs(".jpg") == ["--attrib", "jpeg:subsampling", "4:4:4", "--compression", "jpeg:98",
+                                         "-d", "uint8"], "no chroma subsampling: thin colored lines stay sharp"
+    assert acescg.compressionArg("dwaa") == "dwaa:45" and acescg.compressionArg("bogus") == "dwaa:15"
     assert acescg.outputArgs("exr", "zip") == ["--compression", "zip", "-d", "half"]
 
 

@@ -15,7 +15,8 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
  - Checkboxes: the icon is the tick box, green when on, red when off
  - Convert the sequence to video in the background with ffmpeg that ships with Houdini: Houdini stays usable, a small window shows progress and can cancel
  - Video colors match MPlay right after recording, EXR are converted to ACEScg for Nuke/comp
- - Kept EXR are compressed with DWAA (several times smaller) and carry a flipbook passport in the header: hip, camera,
+ - Kept EXR are compressed with DWAA level 15 (several times smaller than ZIP, thin lines and particles stay sharp;
+   level 45 "smallest", ZIP, PIZ in the settings) and carry a flipbook passport in the header: hip, camera,
    frame range, OCIO view, user, date. The video carries the same passport in its metadata
  - Scene audio (the file in Houdini's Audio panel) goes into the video, synced like in the playbar
  - Memory line: RAM for MPlay and the disk space the flipbook needs vs free space (orange/red when it may not fit)
@@ -197,6 +198,17 @@ without GPL parts and has **no libx264**, so `auto` asks ffmpeg which encoders i
 `libx264` → `h264_videotoolbox` (macOS) → `h264_mf` (Windows) → `h264_nvenc` / `h264_amf` / `h264_qsv` → `mpeg4`,
 moving to the next one if an encoder fails. The `{codec}` line in the ffmpeg command expands to the encoder arguments, `{audio_input}` / `{audio}` to the scene
 sound, `{metadata}` to the passport.
+
+### Image compression
+| Setting | What | On a viewport-like 2K test frame |
+|---|---|---|
+| **DWAA fine details** (default) | `dwaa:15` | 3.75 MB, max error 1.6/255 |
+| DWAA smallest | `dwaa:45`, the OpenEXR default | 2.7 MB, max error 5/255: thin lines and particles get soft |
+| ZIP / PIZ | lossless | depends on the image: noise and grain make them big |
+
+Rewritten JPG (Convert PNG/JPG to matte_paint) are saved at quality 98 without chroma subsampling (4:4:4): the usual
+4:2:0 halves the color resolution and smears thin colored lines (up to 100/255 error on them in the same test).
+The pass can't bring back what Houdini's own JPG writer already lost: use PNG when every pixel counts.
 
 ### Video quality
 Settings → Video → Quality (`advanced.video_quality`). Thin lines, noise and small details need more bits, the file

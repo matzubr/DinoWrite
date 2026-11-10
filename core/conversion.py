@@ -122,7 +122,7 @@ class ConversionJob:
 
         # Kept EXR: ACEScg, compression, passport in one hoiiotool pass
         self.exr_commands = []
-        self.compression = acescg.compressionArg(advanced.get("exr_compression", "dwaa"))
+        self.compression = acescg.compressionArg(advanced.get("exr_compression", acescg.DEFAULT_COMPRESSION))
         rewrite = not self.delete_input and (is_exr or self.matte_paint)  # PNG/JPG only to change the colors
         tool = acescg.findOiiotool(advanced.get("oiiotool_path", "")) if rewrite else ""
         if rewrite and not tool:

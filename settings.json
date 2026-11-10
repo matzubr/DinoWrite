@@ -48,7 +48,7 @@
         "video_codec": "auto",
         "video_quality": "high",
         "exr_acescg": true,
-        "exr_compression": "dwaa",
+        "exr_compression": "dwaa_fine",
         "ldr_matte_paint": true,
         "ldr_colorspace": "auto",
         "video_audio": true,

@@ -199,26 +199,31 @@ def bakeTransform(config_path: str, display: str, view: str, ctf_path: Path, tar
     return Path(ctf_path)
 
 
-COMPRESSION = {"dwaa": "dwaa:45", "zip": "zip", "piz": "piz", "none": "none"}
+# DWAA level: lower keeps more detail (OpenEXR default 45 softens thin lines and particles). On a viewport-like
+# test frame 15 has a third of the error of 45 for ~1.4x the file size.
+COMPRESSION = {"dwaa_fine": "dwaa:15", "dwaa": "dwaa:45", "zip": "zip", "piz": "piz", "none": "none"}
+DEFAULT_COMPRESSION = "dwaa_fine"
+# JPG: no chroma subsampling (4:2:0 halves color resolution: thin colored lines smear) and high quality
+JPEG_ARGS = ["--attrib", "jpeg:subsampling", "4:4:4", "--compression", "jpeg:98"]
 
 
 def compressionArg(setting: str) -> str:
-    """advanced.exr_compression -> OpenImageIO compression name (dwaa:45 by default)"""
-    return COMPRESSION.get(str(setting or "dwaa").lower(), COMPRESSION["dwaa"])
+    """advanced.exr_compression -> OpenImageIO compression name (dwaa:15 by default)"""
+    return COMPRESSION.get(str(setting or DEFAULT_COMPRESSION).lower(), COMPRESSION[DEFAULT_COMPRESSION])
 
 
-def outputArgs(ext: str, compression: str = "dwaa:45") -> list:
+def outputArgs(ext: str, compression: str = "dwaa:15") -> list:
     """Pixel type and compression of the rewritten files: half EXR, 8-bit PNG/JPG like the recorded ones"""
     ext = ext.lower().lstrip(".")
     if ext == "exr":
         return ["--compression", compression, "-d", "half"]
     if ext in ("jpg", "jpeg"):
-        return ["--compression", "jpeg:95", "-d", "uint8"]
+        return JPEG_ARGS + ["-d", "uint8"]
     return ["-d", "uint8"]
 
 
 def command(tool: str, input_pattern: str, output_pattern: str, frame_range: tuple, padding: int,
-            ctf_path: str = "", threads: int = 0, compression: str = "dwaa:45", attributes: list = (),
+            ctf_path: str = "", threads: int = 0, compression: str = "dwaa:15", attributes: list = (),
             colorspace: str = ACESCG_NAME) -> list:
     """hoiiotool argv for a part of the frame range ('#' in patterns is the frame number).
 
@@ -256,7 +261,7 @@ def splitFrames(start: int, end: int, parts: int) -> list:
 
 
 def commands(tool: str, input_pattern: str, output_pattern: str, frame_range: tuple, padding: int,
-             ctf_path: str = "", compression: str = "dwaa:45", attributes: list = (),
+             ctf_path: str = "", compression: str = "dwaa:15", attributes: list = (),
              colorspace: str = ACESCG_NAME) -> list:
     """One hoiiotool command per part of the frame range, to run in parallel"""
     start, end = int(frame_range[0]), int(frame_range[1])

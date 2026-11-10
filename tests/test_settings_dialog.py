@@ -53,7 +53,7 @@ def test_acescg_option_is_saved(dialog, tmp_path):
 
 
 def test_compression_and_audio_options_are_saved(dialog, tmp_path):
-    assert dialog.exr_compression.currentData() == "dwaa" and dialog.video_audio.isChecked()
+    assert dialog.exr_compression.currentData() == "dwaa_fine" and dialog.video_audio.isChecked()
     dialog.exr_compression.setCurrentIndex(dialog.exr_compression.findData("zip"))
     dialog.video_audio.setChecked(False)
     dialog.save()
