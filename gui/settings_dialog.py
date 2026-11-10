@@ -206,8 +206,6 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.fb_folder.setToolTip("Folder for flipbooks, {name} is the flipbook name. Versions are created inside")
         self.fb_name = QLineEdit()
         self.fb_name.setToolTip("File name template: {name}, {version}, {fileformat} and a frame token like $F4")
-        self.fb_video_ext = QComboBox()
-        self.fb_video_ext.addItems(self.settings["formats"]["video_exts"])
         self.delete_incomplete = widgets.CheckBox("Delete flipbook if it doesn't cover the frame range")
         self.exr_acescg = widgets.CheckBox("Convert EXR to ACEScg (for Nuke)")
         self.exr_acescg.setToolTip(
@@ -281,8 +279,7 @@ class SettingsDialog(RoundedWindow, QDialog):
                            ("", self.folder_preview),
                            ("File name", self.fb_name),
                            ("", self._tokens(self.fb_name, NAME_TOKENS)),
-                           ("", self.name_preview),
-                           ("Video extension", self.fb_video_ext)]),
+                           ("", self.name_preview)]),
             self._section([("Record viewer", self.true_resolution), ("", self.delete_incomplete)]),
             self._section([("EXR compression", self.exr_compression), ("", self.exr_acescg),
                            ("", self.ldr_matte_paint), ("PNG/JPG colors", self.ldr_colorspace)]))
@@ -442,7 +439,6 @@ class SettingsDialog(RoundedWindow, QDialog):
         paths, advanced = settings["paths"], settings["advanced"]
         self.fb_folder.setText(paths.get("fb_folder", ""))
         self.fb_name.setText(paths.get("fb_name", ""))
-        self.fb_video_ext.setCurrentText(paths.get("fb_video_ext", "mov"))
         self.delete_incomplete.setChecked(bool(advanced.get("delete_incomplete_fb")))
         self.exr_acescg.setChecked(bool(advanced.get("exr_acescg", True)))
         self.ldr_matte_paint.setChecked(bool(advanced.get("ldr_matte_paint", True)))
@@ -470,7 +466,6 @@ class SettingsDialog(RoundedWindow, QDialog):
 
         paths["fb_folder"] = self.fb_folder.text().strip()
         paths["fb_name"] = self.fb_name.text().strip()
-        paths["fb_video_ext"] = self.fb_video_ext.currentText()
         if "{name}" not in paths["fb_folder"] and "{name}" not in paths["fb_name"]:
             errors.append("Flipbooks folder or file name must contain {name}")
         if not FRAME_TOKEN.search(paths["fb_name"]):

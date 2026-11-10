@@ -74,7 +74,7 @@ Click the gear button in the window title. Tabs:
 
 | tab | what |
 |---|---|
-| General | flipbooks folder (folder button: choose it, `$JOB`/`$HIP` are put back into the path; arrow button: open it), file name template (click a variable chip to insert it, the line below shows what it turns into), video extension, recording viewer, EXR compression, incomplete flipbook cleanup, ACEScg |
+| General | flipbooks folder (folder button: choose it, `$JOB`/`$HIP` are put back into the path; arrow button: open it), file name template (click a variable chip to insert it, the line below shows what it turns into), recording viewer, EXR compression, incomplete flipbook cleanup, ACEScg |
 | Video | what to open after writing, scene audio, sequence cleanup; shows which ffmpeg and encoders are found |
 | Presets | resolution and frame range presets for the dropdown menus |
 
@@ -121,6 +121,9 @@ comes out squashed. The status line turns orange before recording:
 A viewport flipbook stores the viewport image as you see it (OCIO display/view, e.g. Rec.1886 / ACES SDR, already
 applied), linearized with the inverse sRGB curve. "Beauty pass only" is switched off while recording, so it's always
 the viewport as seen.
+
+With Convert to video the File Format menu offers the video formats (`mov`, `mp4`, remembered): the flipbook is
+recorded as EXR and encoded from it; the item says what happens to the EXR (`mov  (sRGB · EXR kept: ACEScg)`).
 
 The File Format menu shows the colorspace each format is written in, the tooltip says how to read it in Nuke:
 `exr (ACEScg)`, `exr (Linear Rec.709)` when ACEScg is off or not possible, `exr (temporary)` when the sequence is

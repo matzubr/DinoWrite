@@ -21,7 +21,7 @@ def start(data,kwargs):
 
     # Parsing settings
     fb_name =      paths.get("fb_name")
-    fb_video_ext = paths.get("fb_video_ext")
+    fb_video_ext = data.get("videoext") or paths.get("fb_video_ext")
     fb_folder = hou.text.expandString(paths.get("fb_folder"))
 
     frame_padding = search(r"\$F\d+",fb_name)

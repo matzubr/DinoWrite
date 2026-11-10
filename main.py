@@ -258,10 +258,11 @@ class DinoWriter(RoundedWindow, QWidget):
 
         ### FOURTH LINE
         label_fileformat = widgets.HBLabel("File Format")
-        self.fileformat =  widgets.ComboBox(self.formats["pic_exts"],item=self.read_data("fileformat", FILE_FORMAT_DEFAULT))
-
-        for index in range(self.fileformat.count()):
-            self.fileformat.setItemData(index, self.fileformat.itemText(index))  # the extension; text gets the colorspace
+        # Pictures (exr/jpg/png) or, with Convert to video, the video (mov/mp4): each choice is remembered
+        self.pic_ext = self.read_data("picformat", self.read_data("fileformat", FILE_FORMAT_DEFAULT))
+        self.video_ext = self.read_data("videoext", self.paths.get("fb_video_ext", "mov"))
+        self.fileformat =  widgets.ComboBox([])
+        self.fileformat.currentIndexChanged.connect(self._rememberFormat)
         grid_layout.addWidget(label_fileformat, 3, 0)
         grid_layout.addWidget(self.fileformat, 3, 1,1,3)
 
@@ -539,29 +540,58 @@ class DinoWriter(RoundedWindow, QWidget):
         size = screen.availableGeometry().size() * screen.devicePixelRatio()
         return resolution[0] <= size.width() and resolution[1] <= size.height()
 
+    def videoExt(self) -> str:
+        return self.video_ext
+
+    def _rememberFormat(self):
+        ext = self.fileformat.currentData()
+        if ext and not getattr(self, "_filling_formats", False):
+            if self.convertvideo.isChecked():
+                self.video_ext = ext
+            else:
+                self.pic_ext = ext
+
     def videoStatus(self) -> str:
         # Convert to video always records EXR (see updateFileFormat)
         self.videoline.setExtraToolTip("EXR is encoded with the sRGB curve: the video looks like MPlay after recording")
         return "sRGB (like MPlay)"
 
     def fileFormat(self) -> str:
-        """Selected extension (the item text also shows the colorspace)"""
-        return self.fileformat.currentData() or self.fileformat.currentText().split()[0]
+        """Extension of the recorded sequence: EXR for the video (encoded like MPlay shows it)"""
+        return "exr" if self.convertvideo.isChecked() else self.pic_ext
 
     def updateFileFormat(self):
-        state = self.convertvideo.isChecked()
-        if state:
-            self.fileformat.setCurrentIndex(max(self.fileformat.findData("exr"), 0))
-            self.fileformat.setDisabled(True)
-        else:
-            self.fileformat.setDisabled(False)
+        """Video on: the menu offers the video formats; off: the picture formats (the item data is the extension)"""
+        video = self.convertvideo.isChecked()
+        exts = self.formats["video_exts"] if video else self.formats["pic_exts"]
+        chosen = self.video_ext if video else self.pic_ext
+        self._filling_formats = True
+        self.fileformat.blockSignals(True)
+        self.fileformat.clear()
+        for ext in exts:
+            self.fileformat.addItem(ext, ext)
+        self.fileformat.setCurrentIndex(max(self.fileformat.findData(chosen), 0))
+        self.fileformat.blockSignals(False)
+        self._filling_formats = False
+        self._rememberFormat()
         self.updateFormatColorspaces()
+        self.updateColorfulLabel()
+        self.updateRamUsage()
 
     def updateFormatColorspaces(self):
         """'exr (ACEScg)', 'png (ACES 1.0 - SDR Video)': how to read the files in Nuke (details in the tooltip)"""
         advanced = self.settings["advanced"]
         keeps_exr = not (self.convertvideo.isChecked() and advanced.get("conversion_delete_input_sequence"))
         viewer = getattr(self.hou_viewport, "getPaneTab", lambda: None)()
+        if self.convertvideo.isChecked():
+            exr, how = acescg.readColorspace("exr", viewer, advanced.get("exr_acescg", True), keeps_exr)
+            kept = "EXR deleted after" if exr == "temporary" else f"EXR kept: {exr}"
+            for index in range(self.fileformat.count()):
+                self.fileformat.setItemText(index, f"{self.fileformat.itemData(index)}  (sRGB · {kept})")
+                self.fileformat.setItemData(index, "Video container. Recorded as EXR, encoded with the sRGB curve: "
+                                            f"looks like MPlay.\n\nThe EXR: {how}", Qt.ToolTipRole)
+            self.fileformat.setToolTip(self.fileformat.currentData(Qt.ToolTipRole) or "")
+            return
         for index in range(self.fileformat.count()):
             ext = self.fileformat.itemData(index)
             name, how = acescg.readColorspace(ext, viewer, advanced.get("exr_acescg", True), keeps_exr,
@@ -791,6 +821,8 @@ class DinoWriter(RoundedWindow, QWidget):
             "framestart": self.framestart.text(),
             "frameend": self.frameend.text(),
             "fileformat": self.fileFormat(),
+            "picformat": self.pic_ext,
+            "videoext": self.video_ext,
             "convertvideo": self.convertvideo.isChecked(),
             "blackbg": self.blackbackground.isChecked(),
             "bgimage": self.offbackgroundimage.isChecked(),

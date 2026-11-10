@@ -220,3 +220,27 @@ def test_menus_preview_what_they_set(houdini, hou, monkeypatch):
     frames = {a.data(): a.text().strip("‎") for a in window.frame_menu.menu.actions() if a.data()}
     assert frames["Global Frame Range"] == "Global Frame Range  (1001–1240)"
     window.close()
+
+
+def test_convert_to_video_offers_video_formats(houdini):
+    import DinoWrite
+
+    window = DinoWrite.show({})
+    window.convertvideo.setChecked(False)
+    window.fileformat.setCurrentIndex(window.fileformat.findData("png"))
+    window.convertvideo.setChecked(True)
+    assert window.fileformat.isEnabled()
+    assert [window.fileformat.itemData(i) for i in range(window.fileformat.count())] == ["mov", "mp4"]
+    window.fileformat.setCurrentIndex(window.fileformat.findData("mp4"))
+    data = window.collectData()
+    assert (data["fileformat"], data["videoext"], data["picformat"]) == ("exr", "mp4", "png"), "video records EXR"
+    assert "sRGB" in window.fileformat.currentText()
+    window.convertvideo.setChecked(False)
+    assert window.fileFormat() == "png", "the picture choice comes back"
+    window.saveState()  # as on WRITE
+    window.close()
+
+    window = DinoWrite.show({})
+    window.convertvideo.setChecked(True)
+    assert window.fileformat.currentData() == "mp4", "remembered"
+    window.close()
