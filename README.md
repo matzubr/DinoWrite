@@ -80,7 +80,7 @@ Click the gear button in the window title. Tabs:
 | tab | what |
 |---|---|
 | General | **Output**: flipbooks folder (Browse…: choose it, `$JOB`/`$HIP` are put back into the path; arrow button: open it), file name template (click a variable chip to insert it; the line below shows what it turns into: yellow when the folder doesn't exist yet, red for an unknown variable or placeholder), EXR compression, incomplete flipbook cleanup. **Viewer**: where to record. **Color management**: ACEScg, PNG/JPG to matte_paint |
-| Video | **After recording**: what to open, scene audio, sequence cleanup. **Tools**: which ffmpeg, encoders, oiiotool, PyOpenColorIO are found |
+| Video | **After recording**: video quality, what to open, scene audio, sequence cleanup. **Tools**: which ffmpeg, encoders, oiiotool, PyOpenColorIO are found |
 | Presets | resolution and frame range presets for the dropdown menus |
 
 Settings that differ from the defaults get a dot before the label (bold text for checkboxes). Destructive options
@@ -197,6 +197,19 @@ without GPL parts and has **no libx264**, so `auto` asks ffmpeg which encoders i
 `libx264` → `h264_videotoolbox` (macOS) → `h264_mf` (Windows) → `h264_nvenc` / `h264_amf` / `h264_qsv` → `mpeg4`,
 moving to the next one if an encoder fails. The `{codec}` line in the ffmpeg command expands to the encoder arguments, `{audio_input}` / `{audio}` to the scene
 sound, `{metadata}` to the passport.
+
+### Video quality
+Settings → Video → Quality (`advanced.video_quality`). Thin lines, noise and small details need more bits, the file
+grows with them:
+
+| Quality | GPU/OS H.264 bitrate (1920×1080, 24 fps) | libx264 CRF | mpeg4 q |
+|---|---|---|---|
+| Draft | ~6 Mbit/s | 23 | 5 |
+| Standard | ~12 Mbit/s | 18 | 3 |
+| **High** (default) | ~25 Mbit/s | 14 | 2 |
+| Max | ~50 Mbit/s | 8 | 1 |
+
+The bitrate scales with the resolution and fps (bits per pixel: 0.12 / 0.25 / 0.5 / 1.0).
 
 ### Tools lookup
 - ffmpeg: `advanced.ffmpeg_path` → `$PDG_FFMPEG` → `$HFS/bin/hffmpeg` (ships with Houdini) → system PATH

@@ -27,6 +27,12 @@ OPEN_AFTER = (
     ("video", "Video", "The converted video in the default player (the folder when there's no video)"),
     ("folder", "Sequence folder", "The folder with the image sequence (drag it into Nuke)"),
 )
+VIDEO_QUALITY = (
+    ("draft", "Draft (small file)", "Quick look, smallest file: fine details and noise get soft"),
+    ("standard", "Standard", "Clean preview; thin lines and small details may get a bit soft"),
+    ("high", "High (default)", "Keeps small details; the file is about 2× Standard"),
+    ("max", "Max (big file)", "Nearly lossless look; the file is about 4× Standard"),
+)
 LDR_COLORSPACES = (
     ("acescct", "ACEScct", "matte_paint of the ACES 1.3 cg/studio configs since cg-config v2.1"),
     ("srgb_texture", "sRGB - Texture", "matte_paint of cg-config v1 and Nuke's aces_1.2: brightest parts greyish"),
@@ -326,6 +332,16 @@ class SettingsDialog(RoundedWindow, QDialog):
             self.open_after.addItem(label, key)
             self.open_after.setItemData(self.open_after.count() - 1, tip, Qt.ToolTipRole)
         self._comboTooltip(self.open_after, "What opens when the flipbook is done (with 'Open result' on)")
+        self.video_quality = QComboBox()
+        for key, label, tip in VIDEO_QUALITY:
+            level = ffmpeg.VIDEO_QUALITY[key]
+            self.video_quality.addItem(label, key)
+            self.video_quality.setItemData(
+                self.video_quality.count() - 1,
+                f"{tip}\n~{ffmpeg.videoBitrate('1920x1080', '24', level['bpp'])}bit/s at 1920×1080, 24 fps "
+                f"(GPU/OS H.264; libx264 CRF {level['crf']}, mpeg4 q {level['qscale']})", Qt.ToolTipRole)
+        self._comboTooltip(self.video_quality, "How much detail the video keeps: higher keeps thin lines and\n"
+                                               "small details sharp, the file gets bigger")
         # One row per tool (a multi-line label in a form layout gets a wrong height and rows overlap)
         self.tool_values = {}
         for key in TOOLS:
@@ -337,7 +353,8 @@ class SettingsDialog(RoundedWindow, QDialog):
                       "ffmpeg_cmd; oiiotool: advanced.oiiotool_path in the user settings file")
 
         return self._page(
-            self._section([("Open result", self.open_after), ("", self.video_audio), ("", self.delete_input)],
+            self._section([("Quality", self.video_quality), ("Open result", self.open_after),
+                           ("", self.video_audio), ("", self.delete_input)],
                           title="After recording"),
             self._section([(key, value) for key, value in self.tool_values.items()], hint=tools_hint,
                           title="Tools"))
@@ -521,6 +538,8 @@ class SettingsDialog(RoundedWindow, QDialog):
 
         self.delete_input.setChecked(bool(advanced.get("conversion_delete_input_sequence")))
         self.open_after.setCurrentIndex(max(self.open_after.findData(advanced.get("open_after", "video_folder")), 0))
+        self.video_quality.setCurrentIndex(max(self.video_quality.findData(
+            advanced.get("video_quality", ffmpeg.DEFAULT_QUALITY)), 0))
 
         self.resolutions.setPlainText("\n".join(settings.get("custom_resolution", [])))
         self.frame_ranges.setPlainText("\n".join(
@@ -556,6 +575,7 @@ class SettingsDialog(RoundedWindow, QDialog):
         advanced["true_resolution"] = self.true_resolution.currentData()
         advanced["conversion_delete_input_sequence"] = self.delete_input.isChecked()
         advanced["open_after"] = self.open_after.currentData()
+        advanced["video_quality"] = self.video_quality.currentData()
 
         resolutions = []
         for line in self._lines(self.resolutions):
@@ -591,7 +611,7 @@ class SettingsDialog(RoundedWindow, QDialog):
                 ("advanced", "true_resolution", self.true_resolution),
                 ("advanced", "exr_acescg", self.exr_acescg), ("advanced", "ldr_matte_paint", self.ldr_matte_paint),
                 ("advanced", "ldr_colorspace", self.ldr_colorspace), ("advanced", "open_after", self.open_after),
-                ("advanced", "video_audio", self.video_audio),
+                ("advanced", "video_audio", self.video_audio), ("advanced", "video_quality", self.video_quality),
                 ("advanced", "conversion_delete_input_sequence", self.delete_input),
                 ("custom_resolution", None, self.resolutions), ("custom_framerange", None, self.frame_ranges)]
 

@@ -208,3 +208,13 @@ def test_long_choices_are_short_with_the_full_text_in_the_tooltip(dialog):
     combo = dialog.true_resolution
     assert all(len(combo.itemText(i)) <= 34 for i in range(combo.count()))
     assert "bigger than the maximized viewport" in combo.toolTip()
+
+
+def test_video_quality_is_saved(dialog, tmp_path):
+    assert dialog.video_quality.currentData() == "high", "high by default: small details stay sharp"
+    assert "bit/s" in dialog.video_quality.toolTip()
+    dialog.video_quality.setCurrentIndex(dialog.video_quality.findData("max"))
+    assert ("advanced", "video_quality") in dialog.changedKeys()
+    dialog.save()
+    stored = json.loads((tmp_path / "user_settings.json").read_text())
+    assert stored == {"advanced": {"video_quality": "max"}}
