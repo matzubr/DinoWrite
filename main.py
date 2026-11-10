@@ -69,7 +69,7 @@ from .core.viewport import HouViewport
 from .gui import animation, widgets
 from .gui.frameless import RoundedWindow, TitleBar
 from .gui.qt import *  # noqa: F403
-from .gui.theme import COLORS as COLORS_PALLETE, STATES
+from .gui.theme import COLORS as COLORS_PALLETE, PRIMARY_STYLE, STATES
 from .gui.resources import ICONS_FOLDER, Icons as _Icons
 from .gui.settings_dialog import SettingsDialog, execDialog
 
@@ -180,9 +180,10 @@ class DinoWriter(RoundedWindow, QWidget):
         
         self.dino_paint = dino_paint
         # Arrow: the details (record/video/camera/memory) slide out below the name; remembered, closed by default
-        self.info_toggle = widgets.PushButton("", radius=11)
-        self.info_toggle.setFixedSize(QSize(22, 22))
-        self.info_toggle.setIconSize(QSize(12, 12))
+        # A word, not only an arrow: easy to miss otherwise
+        self.info_toggle = widgets.PushButton("Details ▾", radius=6)
+        self.info_toggle.setFixedHeight(22)
+        self.info_toggle.setFixedWidth(self.info_toggle.fontMetrics().horizontalAdvance("Details ▾") + 18)
         self.info_toggle.setCursor(Qt.PointingHandCursor)
         self.info_toggle.clicked.connect(lambda: self.setInfoExpanded(not self.info_expanded))
         sequence_layout = widgets.HLayout([self.seqname,dino_paint,self.info_toggle],align=None)
@@ -316,6 +317,7 @@ class DinoWriter(RoundedWindow, QWidget):
         self.writebutton.setIcon(Icons.get("dino_cam.svg"))
         self.writebutton.setIconSize(QSize(35,35))
         self.writebutton.setLayoutDirection(Qt.RightToLeft)
+        self.writebutton.setStyleSheet(widgets.styles.get("mainbutton") + PRIMARY_STYLE)  # the main action
 
         # LAYOUTS
         TITLE_LAYOUT = QVBoxLayout() 
@@ -450,11 +452,8 @@ class DinoWriter(RoundedWindow, QWidget):
         self._updateInfoToggle()
 
     def _updateInfoToggle(self):
-        icon = Icons.get("angle-down2.svg", type="Path")
-        pixmap = QPixmap(icon).transformed(QTransform().rotate(180 if self.info_expanded else 0),
-                                           Qt.SmoothTransformation)
-        self.info_toggle.setIcon(QIcon(pixmap))
-        style = widgets.styles.get("mainbutton")
+        self.info_toggle.setText("Details ▴" if self.info_expanded else "Details ▾")
+        style = widgets.styles.get("mainbutton") + "QPushButton { padding: 0px 4px; }"
         tooltip = "Hide details" if self.info_expanded else "Show details: record, video, camera, memory"
         if self._warnings and not self.info_expanded:
             color = COLORS_PALLETE["crimson"] if any(c == COLORS_PALLETE["crimson"] for _, c in

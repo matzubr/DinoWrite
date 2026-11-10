@@ -11,7 +11,7 @@ from . import animation, widgets
 from .frameless import RoundedWindow, TitleBar
 from .qt import *  # noqa: F403
 from .resources import ICONS_FOLDER
-from .theme import COLORS, STATES
+from .theme import COLORS, PRIMARY_STYLE, STATES
 
 EXR_COMPRESSION = (("dwaa", "DWAA (small, for previews)"), ("zip", "ZIP (lossless)"),
                    ("piz", "PIZ (lossless, grainy images)"), ("none", "None"))
@@ -49,12 +49,6 @@ SECTION_TITLE_STYLE = "background: transparent; color: #9a9a9a; letter-spacing: 
 DANGER_STYLE = f"""
 QCheckBox::indicator:checked {{ image: url(icons:square-check-red.svg); }}
 QCheckBox:checked {{ color: {COLORS['crimson']}; }}
-"""
-# Primary action: the accent color; secondary buttons stay neutral
-PRIMARY_STYLE = f"""
-QPushButton {{ background-color: {STATES['selected']}; color: #141414; border: 1px solid #d6a234; font-weight: bold; }}
-QPushButton:hover {{ background-color: #cf9a2a; border: 1px solid #f0c060; }}
-QPushButton:pressed {{ background-color: #94701e; }}
 """
 CHANGED_DOT = f"<span style='color:{STATES['changed']}'>●</span> "
 

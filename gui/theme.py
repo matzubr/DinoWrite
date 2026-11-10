@@ -27,3 +27,11 @@ STATES = {
 
 WINDOW_RADIUS = 15
 TITLE_BUTTON_SIZE = 20
+
+# Primary action of a window (WRITE, Save): the accent color; secondary buttons stay neutral
+PRIMARY_STYLE = f"""
+QPushButton {{ background-color: {STATES['selected']}; color: #141414; border: 1px solid #d6a234; font-weight: bold; }}
+QPushButton:hover {{ background-color: #cf9a2a; border: 1px solid #f0c060; }}
+QPushButton:pressed {{ background-color: #94701e; }}
+QPushButton:disabled {{ background-color: #3a3a3a; color: #777; border: 1px solid #444; }}
+"""
