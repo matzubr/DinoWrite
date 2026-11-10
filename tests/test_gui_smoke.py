@@ -281,3 +281,21 @@ def test_sequence_hover_shows_the_full_path(houdini, hou, monkeypatch, tmp_path)
     window.updateColorfulLabel()
     assert window.seqname.toolTip() == (tmp_path / "preview/shot/v001/shot.v001.$F4.exr").resolve().as_posix()
     window.close()
+
+
+def test_video_on_shows_the_video_and_its_frames_in_grey(houdini, hou, monkeypatch, tmp_path):
+    import DinoWrite
+
+    monkeypatch.setattr(hou, "text", type("T", (), {"expandString": staticmethod(
+        lambda s: s.replace("$HIP", tmp_path.as_posix()))}), raising=False)
+    window = DinoWrite.show({})
+    window.paths["fb_folder"] = "$HIP/preview/{name}"
+    window.filename.setText("shot")
+    window.convertvideo.setChecked(True)
+    window.fileformat.setCurrentIndex(window.fileformat.findData("mp4"))
+    assert window.seqname.fullText() == "Video: shot.v001.mp4"
+    assert window.seqname.toolTip().endswith((tmp_path / "preview/shot/v001/shot.v001.mp4").resolve().as_posix())
+    assert not window.framesline.isHidden() and window.framesline.text().startswith("Frames: shot.v001.$F4.exr")
+    window.convertvideo.setChecked(False)
+    assert window.seqname.fullText().startswith("Sequence: shot.v001.$F4.") and window.framesline.isHidden()
+    window.close()

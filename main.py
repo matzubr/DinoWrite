@@ -63,6 +63,7 @@ import hou
 import json
 
 from . import config, flipbook
+from .core import conversion
 from .core import acescg, helpers
 from .core.log import hmsg, log
 from .core.viewport import HouViewport
@@ -193,7 +194,11 @@ class DinoWriter(RoundedWindow, QWidget):
         lines = QWidget()
         details_layout = QVBoxLayout(lines)
         details_layout.setContentsMargins(0, 0, 0, 0)
-        for line in (self.statusline, self.videoline, self.cameraname, self.ramusage):
+        self.framesline = widgets.ElidedLabel("")
+        self.framesline.setStyleSheet("background-color: transparent; color: #8a8a8a;")
+        self.framesline.setCursor(Qt.IBeamCursor)
+        self.framesline.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        for line in (self.framesline, self.statusline, self.videoline, self.cameraname, self.ramusage):
             details_layout.addWidget(line)
         self.info_details = widgets.Reveal(lines)
         info_layout.addWidget(self.info_details)
@@ -650,53 +655,73 @@ class DinoWriter(RoundedWindow, QWidget):
         self.fileformat.setToolTip(self.fileformat.currentData(Qt.ToolTipRole) or "")
 
     def updateColorfulLabel(self):
-
-        label =     ["Sequence: ",COLORS_PALLETE["white"]]
-        separator = [".",COLORS_PALLETE["white"]]
-        final_list = label
-
-        fb_name = self.paths.get("fb_name")
-        version = self.currentVersion()
-        for name in fb_name.split("."):
-            part = name.format(name=self.filename.text(),
-                                version=version,
-                                fileformat=self.fileFormat())
-            
-            if name == "{name}":
-                final_list.append(part)
-                final_list.append(COLORS_PALLETE["orange"])
-            elif regsearch(r"\$F\d+",name):
-                final_list.append(part)
-                final_list.append(COLORS_PALLETE["green"])
-            elif name == "{version}":
-                final_list.append(part)
-                final_list.append(COLORS_PALLETE["yellow"])
-            elif name == "{fileformat}":
-                final_list.append(part)
-                final_list.append(COLORS_PALLETE["blue"])
-            else:
-                final_list.append(name)
-                final_list.append(COLORS_PALLETE["white"])
-            final_list+=separator
-        final_list = final_list[:-len(separator)]  # no dot after the extension
+        """What WRITE produces: the video when Convert to video is on (its EXR frames in grey in the details),
+        the sequence otherwise"""
+        video = self.convertvideo.isChecked()
+        colors = {"{name}": "orange", "{version}": "yellow", "{fileformat}": "blue"}
+        parts = []
+        for name in self.paths.get("fb_name").split("."):
+            padding = regsearch(r"\$F\d+", name)
+            if video and padding:  # the video is named like the sequence up to the frame number
+                prefix = name[:padding.start()].rstrip("._-")
+                if prefix:
+                    parts.append((prefix, "white"))
+                parts.append((self.videoExt(), "blue"))
+                break
+            part = name.format(name=self.filename.text(), version=self.currentVersion(), fileformat=self.fileFormat())
+            parts.append((part, "green" if padding else colors.get(name, "white")))
+        final_list = ["Video: " if video else "Sequence: ", COLORS_PALLETE["white"]]
+        for index, (part, color) in enumerate(parts):
+            final_list += [part, COLORS_PALLETE[color]]
+            if index < len(parts) - 1:  # no dot after the extension
+                final_list += [".", COLORS_PALLETE["white"]]
         previous = self.seqname.fullText()
         self.seqname.update(final_list)
         self.seqname.setHoverText(self.outputPath())
+        self.updateFramesLine()
         if previous and self.seqname.fullText() != previous and self.isVisible():
             animation.hop(self.dino_paint)  # new name or version
             animation.refreshText(self.seqname)
 
+    def sequencePath(self) -> Path:
+        """First frame the flipbook will write ($HIP etc. expanded)"""
+        version = self.currentVersion()
+        name = self.paths.get("fb_name").format(name=self.filename.text(), version=version,
+                                                fileformat=self.fileFormat())
+        return helpers.versionFolder(self.paths.get("fb_folder"), self.filename.text(), version) / name
+
     def outputPath(self) -> str:
-        """Full path of the first frame the flipbook will write ($HIP etc. expanded), for the Sequence tooltip"""
+        """Full path of what WRITE produces (the video, or the first frame), for the Sequence tooltip"""
         try:
-            version = self.currentVersion()
-            name = self.paths.get("fb_name").format(name=self.filename.text(), version=version,
-                                                    fileformat=self.fileFormat())
-            path = helpers.versionFolder(self.paths.get("fb_folder"), self.filename.text(), version) / name
+            path = self.sequencePath()
+            if self.convertvideo.isChecked():
+                padding = regsearch(r"\$F\d+", self.paths.get("fb_name"))
+                path = conversion.videoPath(path, padding[0] if padding else "", self.videoExt())
         except Exception as e:  # noqa: BLE001 - a tooltip must never break the window
             log.warning("Can't resolve the output path: %s", e)
             return ""
         return path.as_posix()
+
+    def updateFramesLine(self):
+        """Video on: the EXR frames it is made from, grey (kept in ACEScg or deleted after)"""
+        video = self.convertvideo.isChecked()
+        if video:
+            advanced = self.settings["advanced"]
+            name = self.paths.get("fb_name").format(name=self.filename.text(), version=self.currentVersion(),
+                                                    fileformat=self.fileFormat())
+            if advanced.get("conversion_delete_input_sequence"):
+                fate = "deleted after"
+            else:
+                fate = "kept" + (", ACEScg" if advanced.get("exr_acescg", True) else "")
+            self.framesline.setText(f"Frames: {name} · {fate}")
+            try:
+                self.framesline.setExtraToolTip(self.sequencePath().as_posix())
+            except Exception:  # noqa: BLE001
+                self.framesline.setExtraToolTip("")
+        if self.framesline.isHidden() == video:
+            self.framesline.setVisible(video)
+            if hasattr(self, "info_expanded"):
+                self.setInfoExpanded(self.info_expanded, animate=False)
 
     def updateCameraLabel(self):
         animation.setTextAnimated(self.cameraname, f"Camera: {self.hou_viewport.cameraName()}")

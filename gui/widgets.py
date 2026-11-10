@@ -133,7 +133,9 @@ class ColorfulLabel(Label):
         overflow = metrics.horizontalAdvance(self.fullText()) - (self.contentsRect().width() - 2)
         elided = self.isVisible() and overflow > 0 and bool(labels)
         if elided:
-            longest = max(range(len(labels)), key=lambda index: metrics.horizontalAdvance(labels[index]))
+            # the first part is the caption ("Sequence: "): it stays
+            candidates = range(1, len(labels)) if len(labels) > 1 else range(len(labels))
+            longest = max(candidates, key=lambda index: metrics.horizontalAdvance(labels[index]))
             label = labels[longest]
             target = metrics.horizontalAdvance(label) - overflow - metrics.horizontalAdvance("…")
             while label and metrics.horizontalAdvance(label) > target:
