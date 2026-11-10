@@ -272,18 +272,15 @@ class DinoWriter(RoundedWindow, QWidget):
         checkbox_layout.setContentsMargins(8, 6, 8, 6)
         checkbox_layout.setHorizontalSpacing(12)
 
+        # The icon is the tick box: green when on, red when off
         self.convertvideo =       widgets.CheckBox(
-            "Convert to video",self.read_data("convertvideo", CONVERT_VIDEO_DEFAULT))
-        convertvideo_icon = widgets.HIcon(Icons.get("clapperboard.svg",type="Path"),size=15)
+            "Convert to video",self.read_data("convertvideo", CONVERT_VIDEO_DEFAULT), icon="clapperboard.svg")
         self.blackbackground =    widgets.CheckBox(
-            "Black background", self.read_data("blackbg", BLACK_BACKGROUND_DEFAULT))
-        blackbackground_icon = widgets.HIcon(Icons.get("circle-half-stroke.svg",type="Path"),size=15)
+            "Black background", self.read_data("blackbg", BLACK_BACKGROUND_DEFAULT), icon="circle-half-stroke.svg")
         self.offbackgroundimage = widgets.CheckBox(
-            "Hide BG image",self.read_data("bgimage", OFF_BACKGROUND_IMAGE_DEFAULT))
-        offbackgroundimage_icon = widgets.HIcon(Icons.get("eye-slash.svg",type="Path"),size=15)
+            "Hide BG image",self.read_data("bgimage", OFF_BACKGROUND_IMAGE_DEFAULT), icon="eye-slash.svg")
         self.openwritefolder =    widgets.CheckBox(
-            "Open result",self.read_data("openfolder", OPEN_WRITE_FOLDER_DEFAULT))
-        openwritefolder_icon = widgets.HIcon(Icons.get("folder-open.svg",type="Path"),size=15)
+            "Open result",self.read_data("openfolder", OPEN_WRITE_FOLDER_DEFAULT), icon="folder-open.svg")
         
         self.convertvideo.setToolTip("After the end of recording the flipbook,the entire \nsequence of files will be converted to video via ffmpeg")
         self.blackbackground.setToolTip("When recording a flipbook with white/gray background colors , the final \nimage turns out to be incorrect. \n\nThis checkbox switches the background to black during the recording of the flipbook")
@@ -294,26 +291,19 @@ class DinoWriter(RoundedWindow, QWidget):
         # can't work there. Shown off and grey; the saved values are kept for OBJ/SOP viewers.
         self.solaris_kept = {}
         if getattr(self.hou_viewport, "isLop", lambda: False)():
-            for key, checkbox, icon in (("blackbg", self.blackbackground, blackbackground_icon),
-                                        ("bgimage", self.offbackgroundimage, offbackgroundimage_icon)):
+            for key, checkbox in (("blackbg", self.blackbackground), ("bgimage", self.offbackgroundimage)):
                 self.solaris_kept[key] = checkbox.isChecked()
                 checkbox.setChecked(False)
                 checkbox.setCursor(Qt.ForbiddenCursor)
-                for widget in (checkbox, icon):
-                    widget.setEnabled(False)
-                    widget.setToolTip("Not available in Solaris: changing viewport options from Python\n"
-                                      "resets the viewer lighting (Headlight Only -> Normal), a Houdini bug")
-
-        convertvideo_layout =       widgets.HLayout([self.convertvideo,convertvideo_icon])
-        blackbackground_layout =    widgets.HLayout([self.blackbackground,blackbackground_icon])
-        offbackgroundimage_layout = widgets.HLayout([self.offbackgroundimage,offbackgroundimage_icon])
-        openwritefolder_layout =    widgets.HLayout([self.openwritefolder,openwritefolder_icon])
+                checkbox.setEnabled(False)
+                checkbox.setToolTip("Not available in Solaris: changing viewport options from Python\n"
+                                    "resets the viewer lighting (Headlight Only -> Normal), a Houdini bug")
 
         # 2x2: what happens after recording on the left, the viewer during recording on the right
-        checkbox_layout.addLayout(convertvideo_layout, 0, 0)
-        checkbox_layout.addLayout(openwritefolder_layout, 1, 0)
-        checkbox_layout.addLayout(blackbackground_layout, 0, 1)
-        checkbox_layout.addLayout(offbackgroundimage_layout, 1, 1)
+        checkbox_layout.addWidget(self.convertvideo, 0, 0)
+        checkbox_layout.addWidget(self.openwritefolder, 1, 0)
+        checkbox_layout.addWidget(self.blackbackground, 0, 1)
+        checkbox_layout.addWidget(self.offbackgroundimage, 1, 1)
         
         ### MAIN BUTTON
         self.writebutton = widgets.PushButton("WRITE ", default=True,size=widgets.MAIN_SIZE+4)

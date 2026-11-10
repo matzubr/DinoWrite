@@ -302,20 +302,31 @@ class SideImageMenu(QMenu):
 
 class CheckBox(AnimatedCheckBox, QCheckBox):
     """
-    CheckBox with an animated hover glow and a flash on toggle
+    CheckBox with an animated hover glow and a flash on toggle.
+    icon: shown instead of the tick box, on green when on, on red when off (no separate icon next to the text)
     """
+    ICON_STYLE = (
+        "QCheckBox::indicator {{ width: 16px; height: 16px; padding: 2px; border-radius: 5px; image: url(icons:{icon}); }}"
+        "QCheckBox::indicator:checked {{ image: url(icons:{icon}); background-color: rgba(4, 231, 98, 70);"
+        " border: 1px solid #04e762; }}"
+        "QCheckBox::indicator:unchecked {{ image: url(icons:{icon}); background-color: rgba(236, 60, 72, 60);"
+        " border: 1px solid #ec3c48; }}"
+        "QCheckBox::indicator:disabled {{ image: url(icons:{icon}); background-color: transparent;"
+        " border: 1px dashed #6a6a6a; width: 16px; height: 16px; }}")
+
     def __init__(self,
                 label:str="",
                 default:bool=False,
                 font:str=MAIN_FONT,
                 size:int=MAIN_SIZE,
+                icon:str="",
                 parent=None) -> QCheckBox:
         
         super().__init__(parent)
         
         self.setText(label)
         self.setFont(QFont(font,size))
-        self.setStyleSheet(styles.get("checkbox"))
+        self.setStyleSheet(styles.get("checkbox") + (self.ICON_STYLE.format(icon=icon) if icon else ""))
         self.setChecked(default)
         self.setupAnimation()  # after the initial state: no flash on open
         self.setFocusPolicy(Qt.ClickFocus)
