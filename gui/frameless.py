@@ -31,6 +31,68 @@ class RoundedWindow(FadingWindow):
         painter.end()
 
 
+class WidthResizable:
+    """Mixin: drag the left/right edge of a frameless window to change its width (the height follows the content).
+    Call setupWidthResize(minimum, maximum, on_resized) in __init__; on_resized() runs when the drag ends."""
+    RESIZE_EDGE = 8  # px from the window edge where the drag starts
+
+    def setupWidthResize(self, minimum: int, maximum: int, on_resized=None):
+        self._width_range = (minimum, maximum)
+        self._on_resized = on_resized
+        self._resize_drag = None
+        self.setMouseTracking(True)
+
+    def _resizeEdge(self, pos) -> int:
+        """-1 left edge, 1 right edge, 0 elsewhere"""
+        if pos.x() <= self.RESIZE_EDGE:
+            return -1
+        if pos.x() >= self.width() - self.RESIZE_EDGE:
+            return 1
+        return 0
+
+    def setWidthClamped(self, width: int) -> int:
+        minimum, maximum = self._width_range
+        width = int(min(max(width, minimum), maximum))
+        self.setFixedWidth(width)
+        return width
+
+    def mousePressEvent(self, event):
+        edge = self._resizeEdge(event.position().toPoint() if hasattr(event, "position") else event.pos())
+        if event.button() == Qt.LeftButton and edge:
+            pos = event.globalPosition().toPoint() if hasattr(event, "globalPosition") else event.globalPos()
+            self._resize_drag = (edge, pos.x(), self.width(), self.x())
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._resize_drag:
+            edge, start, width, x = self._resize_drag
+            pos = event.globalPosition().toPoint() if hasattr(event, "globalPosition") else event.globalPos()
+            new_width = self.setWidthClamped(width + (pos.x() - start) * edge)
+            if edge < 0:  # the right edge stays in place
+                self.move(x + width - new_width, self.y())
+            return
+        local = event.position().toPoint() if hasattr(event, "position") else event.pos()
+        if self._resizeEdge(local):
+            self.setCursor(Qt.SizeHorCursor)
+        else:
+            self.unsetCursor()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._resize_drag:
+            self._resize_drag = None
+            if self._on_resized:
+                self._on_resized()
+            return
+        super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event):
+        if not self._resize_drag:
+            self.unsetCursor()
+        super().leaveEvent(event)
+
+
 def _roundButton(icon: str, color: str, hover: str, icon_size: int = 0) -> QPushButton:
     button = widgets.PushButton(radius=TITLE_BUTTON_SIZE / 2)
     button.setFixedSize(TITLE_BUTTON_SIZE, TITLE_BUTTON_SIZE)

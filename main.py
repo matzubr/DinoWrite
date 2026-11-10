@@ -7,7 +7,8 @@ Python Tool for Houdini to easily write flipbooks
 TITLE = "DinoWrite"
 WINDOW_TITLE = TITLE
 
-WINDOW_WIDTH = 430
+WINDOW_WIDTH = 470  # default; drag the left/right edge for more (remembered)
+MAX_WINDOW_WIDTH = 1000
 WINDOW_HIGHT = 508
 WINDOW_OBJECT_NAME = "DinoWriterWindow"
 WIDTH_OFFSET = 20
@@ -71,7 +72,7 @@ from .core import acescg, helpers
 from .core.log import hmsg, log
 from .core.viewport import HouViewport
 from .gui import animation, widgets
-from .gui.frameless import RoundedWindow, TitleBar
+from .gui.frameless import RoundedWindow, TitleBar, WidthResizable
 from .gui.qt import *  # noqa: F403
 from .gui.theme import COLORS as COLORS_PALLETE, PRIMARY_STYLE, STATES
 from .gui.resources import ICONS_FOLDER, Icons as _Icons
@@ -87,7 +88,7 @@ def findOpenWindow(exclude=None):
     return None
 
 
-class DinoWriter(RoundedWindow, QWidget):
+class DinoWriter(WidthResizable, RoundedWindow, QWidget):
 
     def __init__(self,kwargs):
         '''
@@ -159,6 +160,11 @@ class DinoWriter(RoundedWindow, QWidget):
         self.addframerange = settingsfile["custom_framerange"]
 
         self.data = self.load_json(config.lastUsedPath())
+        # Wider for long names: drag a side edge, the width is remembered (the height follows the content)
+        self.setupWidthResize(WINDOW_WIDTH, MAX_WINDOW_WIDTH, on_resized=self.widthChanged)
+        width = self.setWidthClamped(helpers.toInt(str(self.read_data("width", WINDOW_WIDTH))) or WINDOW_WIDTH)
+        if width != WINDOW_WIDTH:  # keep it under the mouse like the default one
+            self.move(int(max(self.x() - (width - WINDOW_WIDTH) / 2, 0)), self.y())
         self.initUI()
 
     def initUI(self):
@@ -957,8 +963,16 @@ class DinoWriter(RoundedWindow, QWidget):
             "bgimage": self.offbackgroundimage.isChecked(),
             "openfolder": self.openwritefolder.isChecked(),
             "infoexpanded": self.info_expanded,
+            "width": self.width(),
             **self.solaris_kept,  # Solaris: unchecked here, OBJ/SOP keep the user's choice
         }
+
+    def widthChanged(self):
+        self.setFixedHeight(self.contentHeight())
+        try:
+            self.saveState()
+        except OSError as e:
+            log.warning("Can't remember the window width: %s", e)
 
     def saveState(self) -> dict:
         """Remember current field values for the next time the window opens"""

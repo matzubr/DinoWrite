@@ -27,6 +27,7 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
  - Opens the result when done: the converted video and its folder (with the video selected), or only one of them
  - Settings dialog behind the gear button, your settings survive tool updates
  - Remembers last used values
+ - Wider window for long names: drag its left or right edge (the width is remembered)
  - Animations in the HotBox style: windows fade in/out, window parts come in one after another; on hover a white
    wave spreads from the cursor and the button gets lighter and a bit bigger; checkboxes glow on hover and flash on
    toggle; changed info text blinks in; a wrong name shakes; the dino hops on a new name/version; menus fade in

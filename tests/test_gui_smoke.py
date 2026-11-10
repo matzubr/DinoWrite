@@ -330,3 +330,30 @@ def test_video_on_shows_the_video_and_its_frames_in_grey(houdini, hou, monkeypat
     window.convertvideo.setChecked(False)
     assert window.seqname.fullText().startswith("Sequence: shot.v001.$F4.") and window.framesline.isHidden()
     window.close()
+
+
+def test_window_width_drags_from_the_edge_and_is_remembered(houdini):
+    import DinoWrite
+    from DinoWrite import main
+    from DinoWrite.gui.qt import QPoint, QPointF, Qt
+    from PySide6.QtTest import QTest
+
+    window = DinoWrite.show({})
+    assert window.width() == main.WINDOW_WIDTH
+    right = QPoint(window.width() - 3, window.height() // 2)
+    QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, right)
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtCore import QEvent
+    target = window.mapToGlobal(right) + QPoint(120, 0)
+    move = QMouseEvent(QEvent.MouseMove, QPointF(right + QPoint(120, 0)), QPointF(target),
+                       Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+    window.mouseMoveEvent(move)
+    QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, right + QPoint(120, 0))
+    assert window.width() == main.WINDOW_WIDTH + 120
+    window.close()
+
+    reopened = DinoWrite.show({})
+    assert reopened.width() == main.WINDOW_WIDTH + 120
+    reopened.setWidthClamped(10)
+    assert reopened.width() == main.WINDOW_WIDTH, "never narrower than the default"
+    reopened.close()
