@@ -1,5 +1,6 @@
 from .qt import *  # noqa: F403
 from .animation import AnimatedButton, AnimatedCheckBox, fadeMenus
+from .theme import COLORS
 from .resources import FONT_FILE, STYLESHEETS_FILE, Icons as _Icons, StyleSheet
 from ..core.log import log
 
@@ -291,41 +292,49 @@ class DropDownButton(AnimatedButton, QPushButton):
             action.setToolTip(tooltip or "")
 
 class VersionBox(QWidget):
-    """− v004 +: steps the flipbook version. Signals changed(step) with -1 / +1."""
+    """‹ v004 ›: steps the flipbook version, sits inside the output name of the info line (quiet until needed:
+    grey arrows, the version in the name's yellow). Signals changed(step) with -1 / +1."""
     changed = Signal(int)
-    LABEL_STYLE = ("QLabel { background-color: #131313; color: #eee; border: 1px solid #343434; border-radius: 2px;"
-                   " padding: 3px; }")
+    ARROW_STYLE = ("QPushButton {{ background: transparent; border: none; color: #8a8a8a; padding: 0px;"
+                   " font-weight: bold; }} QPushButton:hover {{ color: #ffffff; background-color: #4a4a4a;"
+                   " border-radius: 3px; }} QPushButton:disabled {{ color: #464646; }}")
+    LABEL_STYLE = "QLabel {{ background: transparent; color: {color}; padding: 0px; }}"
 
-    def __init__(self, font: str = MAIN_FONT, size: int = MAIN_SIZE, parent=None):
+    def __init__(self, font: str = MAIN_FONT, size: int = MAIN_SIZE, color: str = COLORS["yellow"], parent=None):
         super().__init__(parent)
+        self.color = color
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(3)
-        self.minus = PushButton("−", size=size)
-        self.plus = PushButton("+", size=size)
+        layout.setSpacing(0)
+        self.minus = QPushButton("‹")
+        self.plus = QPushButton("›")
         self.label = QLabel("v001")
         self.label.setFont(QFont(font, size))
         self.label.setAlignment(Qt.AlignCenter)
-        self.label.setStyleSheet(self.LABEL_STYLE)
-        self.label.setMinimumWidth(1)
+        self.label.setStyleSheet(self.LABEL_STYLE.format(color=color))
         for button, step, tip in ((self.minus, -1, "Previous version: write over it"),
                                   (self.plus, 1, "Next version (the next free one is the default)")):
-            button.setFixedSize(QSize(22, 22))
+            button.setFont(QFont(font, size + 5))
+            button.setFixedSize(QSize(13, 20))
+            button.setFocusPolicy(Qt.NoFocus)
+            button.setStyleSheet(self.ARROW_STYLE.format())
             button.setCursor(Qt.PointingHandCursor)
             button.setToolTip(tip)
             button.clicked.connect(lambda checked=False, step=step: self.changed.emit(step))
         layout.addWidget(self.minus)
-        layout.addWidget(self.label, 1)
+        layout.addWidget(self.label)
         layout.addWidget(self.plus)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
     def show(self, version: str, color: str = "", bold: bool = False, tooltip: str = ""):
-        """Shown version, its color (orange: exists and will be overwritten), bold when chosen by hand"""
+        """Shown version, its color (amber: exists and will be overwritten), bold when chosen by hand"""
         self.label.setText(version)
         font = self.label.font()
         font.setBold(bold)
         self.label.setFont(font)
-        self.label.setStyleSheet(self.LABEL_STYLE + (f"QLabel {{ color: {color}; border-color: {color}; }}" if color else ""))
+        self.label.setStyleSheet(self.LABEL_STYLE.format(color=color or self.color))
         self.label.setToolTip(tooltip)
+        self.label.setFixedWidth(self.label.fontMetrics().horizontalAdvance(version) + 2)
 
 
 class SideImageMenu(QMenu):

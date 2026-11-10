@@ -181,10 +181,12 @@ class DinoWriter(WidthResizable, RoundedWindow, QWidget):
         self.statusline = widgets.ElidedLabel("")
         self.videoline = widgets.ElidedLabel("")
         self.seqname = widgets.ColorfulLabel()
+        self.seqtail = widgets.ColorfulLabel()  # after the version: never shortened
+        self.seqtail.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         dino_paint = widgets.HIcon(Icons.get("label_dino_paint.svg",type="Path"),size=50)
         
         # Every info line can be selected and copied (paths, names, sizes)
-        for label in (self.cameraname, self.ramusage, self.statusline, self.videoline, self.seqname):
+        for label in (self.cameraname, self.ramusage, self.statusline, self.videoline, self.seqname, self.seqtail):
             label.setCursor(Qt.IBeamCursor)
             label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         
@@ -196,7 +198,18 @@ class DinoWriter(WidthResizable, RoundedWindow, QWidget):
         self.info_toggle.setFixedWidth(self.info_toggle.fontMetrics().horizontalAdvance("Details ▾") + 18)
         self.info_toggle.setCursor(Qt.PointingHandCursor)
         self.info_toggle.clicked.connect(lambda: self.setInfoExpanded(not self.info_expanded))
-        sequence_layout = widgets.HLayout([self.seqname,dino_paint,self.info_toggle],align=None)
+        # The output name with the version stepper in its place: "Sequence: flipbook.‹v082›.$F4.exr"
+        self.version_choice = None
+        self.versionbox = widgets.VersionBox(color=COLORS_PALLETE["yellow"])
+        self.versionbox.changed.connect(self.stepVersion)
+        name_layout = QHBoxLayout()
+        name_layout.setSpacing(0)
+        for part in (self.seqname, self.versionbox, self.seqtail):
+            name_layout.addWidget(part)
+        sequence_layout = QHBoxLayout()
+        sequence_layout.addLayout(name_layout)
+        sequence_layout.addWidget(dino_paint)
+        sequence_layout.addWidget(self.info_toggle)
 
         # The flipbook name first, then how it's recorded and encoded, camera and memory/disk
         info_layout.addLayout(sequence_layout)
@@ -226,14 +239,8 @@ class DinoWriter(WidthResizable, RoundedWindow, QWidget):
         self.filename.installEventFilter(self)
         self.menu_button = widgets.DropDownButton(menu=folders_list, callback=self.setMenuItemFile)
 
-        # Version: the next free one by default, − / + to pick another (an existing one is overwritten)
-        self.version_choice = None
-        self.versionbox = widgets.VersionBox()
-        self.versionbox.changed.connect(self.stepVersion)
-
         grid_layout.addWidget(label_filename, 0, 0)
-        grid_layout.addWidget(self.filename, 0, 1)
-        grid_layout.addWidget(self.versionbox, 0, 2)
+        grid_layout.addWidget(self.filename, 0, 1, 1, 2)  # the version is picked in the output name below
         grid_layout.addWidget(self.menu_button, 0, 3)
 
         ### SECOND LINE
@@ -685,20 +692,39 @@ class DinoWriter(WidthResizable, RoundedWindow, QWidget):
                     parts.append((prefix, "white"))
                 parts.append((self.videoExt(), "blue"))
                 break
+            if name == "{version}":
+                parts.append((None, "yellow"))  # the version stepper goes here
+                continue
             part = name.format(name=self.filename.text(), version=self.currentVersion(), fileformat=self.fileFormat())
             parts.append((part, "green" if padding else colors.get(name, "white")))
-        final_list = ["Video: " if video else "Sequence: ", COLORS_PALLETE["white"]]
+        stepper_after = not any(part is None for part, _ in parts)
+        if stepper_after:  # no {version} of its own: the stepper after the name
+            parts.append((None, "yellow"))
+        head = ["Video: " if video else "Sequence: ", COLORS_PALLETE["white"]]
+        tail = []
+        target = head
         for index, (part, color) in enumerate(parts):
-            final_list += [part, COLORS_PALLETE[color]]
-            if index < len(parts) - 1:  # no dot after the extension
-                final_list += [".", COLORS_PALLETE["white"]]
-        previous = self.seqname.fullText()
-        self.seqname.update(final_list)
-        self.seqname.setHoverText(self.outputPath())
+            if part is None:
+                target = tail
+            else:
+                target += [part, COLORS_PALLETE[color]]
+            if index < len(parts) - (2 if stepper_after else 1):  # no dot after the extension
+                target += [".", COLORS_PALLETE["white"]]
+        previous = self.sequenceText()
+        self.updateVersion()
+        self.seqname.update(head)
+        self.seqtail.update(tail)
+        self.seqtail.setFixedWidth(self.seqtail.sizeHint().width() if tail else 0)
+        for label in (self.seqname, self.seqtail):
+            label.setHoverText(self.outputPath())
         self.updateFramesLine()
-        if previous and self.seqname.fullText() != previous and self.isVisible():
+        if previous and self.sequenceText() != previous and self.isVisible():
             animation.hop(self.dino_paint)  # new name or version
             animation.refreshText(self.seqname)
+
+    def sequenceText(self) -> str:
+        """The whole output line as shown: caption, name, version, the rest"""
+        return self.seqname.fullText() + self.versionbox.label.text() + self.seqtail.fullText()
 
     def sequencePath(self) -> Path:
         """First frame the flipbook will write ($HIP etc. expanded)"""

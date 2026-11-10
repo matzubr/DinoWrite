@@ -186,10 +186,12 @@ def test_long_sequence_name_is_shortened_in_the_middle(houdini):
     window.updateColorfulLabel()
     window.layout().activate()
     shown = window.seqname.text()
-    assert "…" in shown and "v001" in shown and "$F4" in shown, "version, frames, extension stay visible"
-    assert window.seqname.toolTip().endswith(".exr") and window.seqname.fullText().endswith(".exr")
-    assert not window.seqname.fullText().endswith("."), "no dot after the extension"
-    assert window.seqname.geometry().right() < window.dino_paint.geometry().left()
+    assert "…" in shown, "the name is shortened"
+    assert window.seqtail.fullText() == ".$F4.exr" and window.versionbox.label.text() == "v001", \
+        "version, frames, extension stay visible"
+    assert window.seqname.toolTip().endswith(".exr") and window.sequenceText().endswith(".exr")
+    assert not window.sequenceText().endswith("."), "no dot after the extension"
+    assert window.seqtail.geometry().right() < window.dino_paint.geometry().left()
     assert window.dino_paint.geometry().right() < window.info_toggle.geometry().left()
     window.close()
 
@@ -292,7 +294,7 @@ def test_version_steps_and_warns_about_overwriting(houdini, hou, monkeypatch, tm
     window.versionbox.minus.click()
     assert window.versionbox.label.text() == "v002" and window.collectData()["version"] == "v002"
     assert "v002 exists (1 file): will be overwritten" in window.statusline.text()
-    assert "v002" in window.seqname.fullText()
+    assert "v002" in window.sequenceText()
     window.versionbox.plus.click()
     assert window.collectData()["version"] == "", "back at the next free one: automatic"
     window.versionbox.minus.click()
@@ -324,11 +326,11 @@ def test_video_on_shows_the_video_and_its_frames_in_grey(houdini, hou, monkeypat
     window.filename.setText("shot")
     window.convertvideo.setChecked(True)
     window.fileformat.setCurrentIndex(window.fileformat.findData("mp4"))
-    assert window.seqname.fullText() == "Video: shot.v001.mp4"
+    assert window.sequenceText() == "Video: shot.v001.mp4"
     assert window.seqname.toolTip().endswith((tmp_path / "preview/shot/v001/shot.v001.mp4").resolve().as_posix())
     assert not window.framesline.isHidden() and window.framesline.text().startswith("Frames: shot.v001.$F4.exr")
     window.convertvideo.setChecked(False)
-    assert window.seqname.fullText().startswith("Sequence: shot.v001.$F4.") and window.framesline.isHidden()
+    assert window.sequenceText().startswith("Sequence: shot.v001.$F4.") and window.framesline.isHidden()
     window.close()
 
 
@@ -357,3 +359,18 @@ def test_window_width_drags_from_the_edge_and_is_remembered(houdini):
     reopened.setWidthClamped(10)
     assert reopened.width() == main.WINDOW_WIDTH, "never narrower than the default"
     reopened.close()
+
+
+def test_version_is_picked_inside_the_output_name(houdini):
+    import DinoWrite
+
+    window = DinoWrite.show({})
+    window.filename.setText("shot")
+    window.updateColorfulLabel()
+    assert window.seqname.fullText() == "Sequence: shot."
+    assert window.versionbox.label.text() == "v001" and window.seqtail.fullText().startswith(".$F4.")
+    assert window.filename.parentWidget() is not window.versionbox.parentWidget(), "not next to the name field"
+    window.paths["fb_name"] = "{name}_{version}.$F4.{fileformat}"  # version inside a part: stepper at the end
+    window.updateColorfulLabel()
+    assert window.seqtail.fullText() == "" and not window.seqname.fullText().endswith(".")
+    window.close()

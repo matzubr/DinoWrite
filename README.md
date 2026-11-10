@@ -9,8 +9,9 @@ Write flipbooks to disk easily. A pure Python tool for Houdini.
 
 ## Features
 ---
- - Folders are automatically versioned (`v001`, `v002`, ...); `−` / `+` next to the name pick another version: an
-   existing one turns orange with a warning and is overwritten after a confirmation (its old frames and video go first)
+ - Folders are automatically versioned (`v001`, `v002`, ...); the grey `‹` / `›` around the version in the output
+   line (`Sequence: shot.‹v003›.$F4.exr`) pick another one: an existing one turns amber with a warning and is
+   overwritten after a confirmation (its old frames and video go first)
  - True resolution: a 4K flipbook on a 2K monitor is recorded in a torn off copy of the viewer sized to 4K (bigger than the screen) instead of stretching the viewport
  - Checkboxes: the icon is the tick box, green when on, red when off
  - Convert the sequence to video in the background with ffmpeg that ships with Houdini: Houdini stays usable, a small window shows progress and can cancel
