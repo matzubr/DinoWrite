@@ -413,11 +413,13 @@ class AnimatedCheckBox:
         return apply
 
     def paintEvent(self, event):
-        alpha = 0.20 * self.hover + 0.35 * self.flash
+        # hover: neutral light (one meaning per color, see theme.STATES); the toggle flash keeps the accent
+        hover, flash = 0.10 * self.hover, 0.35 * self.flash
+        alpha = hover + flash
         if alpha > 0 and self.isEnabled():
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
-            color = QColor(ACCENT)
+            color = QColor(ACCENT) if flash >= hover else QColor(255, 255, 255)
             color.setAlphaF(min(alpha, 1.0))
             painter.setPen(Qt.NoPen)
             painter.setBrush(color)
