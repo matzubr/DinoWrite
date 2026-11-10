@@ -69,7 +69,7 @@ from .core.viewport import HouViewport
 from .gui import animation, widgets
 from .gui.frameless import RoundedWindow, TitleBar
 from .gui.qt import *  # noqa: F403
-from .gui.theme import COLORS as COLORS_PALLETE
+from .gui.theme import COLORS as COLORS_PALLETE, STATES
 from .gui.resources import ICONS_FOLDER, Icons as _Icons
 from .gui.settings_dialog import SettingsDialog, execDialog
 
@@ -458,7 +458,7 @@ class DinoWriter(RoundedWindow, QWidget):
         tooltip = "Hide details" if self.info_expanded else "Show details: record, video, camera, memory"
         if self._warnings and not self.info_expanded:
             color = COLORS_PALLETE["crimson"] if any(c == COLORS_PALLETE["crimson"] for _, c in
-                                                     self._warnings.values()) else COLORS_PALLETE["orange"]
+                                                     self._warnings.values()) else STATES["warning"]
             style += f"QPushButton {{ border: 1px solid {color}; background-color: {color}55; }}"
             tooltip += "\n\n" + "\n".join(text for text, _ in self._warnings.values())
         self.info_toggle.setStyleSheet(style)
@@ -480,7 +480,7 @@ class DinoWriter(RoundedWindow, QWidget):
         self.writebutton.setToolTip(problem)
         self.updateVersion()
         warning = "" if problem else (self.overwriteWarning() or self.aspectWarning())
-        status_color = COLORS_PALLETE["crimson"] if problem else (COLORS_PALLETE["orange"] if warning else "#ffffff")
+        status_color = COLORS_PALLETE["crimson"] if problem else (STATES["warning"] if warning else "#ffffff")
         self.statusline.setStyleSheet(f"background-color: transparent; color: {status_color};")
         self.statusline.setExtraToolTip(
             "Resolution aspect differs from the camera: Houdini stretches the image to it.\n"
@@ -547,7 +547,7 @@ class DinoWriter(RoundedWindow, QWidget):
         version = self.version_choice or auto
         files = self.existingFiles()
         if files:
-            color, tip = COLORS_PALLETE["orange"], f"{version} already has {helpers.plural(files, 'file')}: they will be overwritten"
+            color, tip = STATES["warning"], f"{version} already has {helpers.plural(files, 'file')}: they will be overwritten"
         elif self.version_choice:
             color, tip = "", f"{version} chosen by hand (the next free one is {auto})"
         else:
@@ -795,7 +795,7 @@ class DinoWriter(RoundedWindow, QWidget):
             disk += f" · {helpers.formatBytes(free)} free"
         color, tip = "#ffffff", ""
         if size is not None and free is not None and size > free * DISK_WARNING_SHARE:
-            color = COLORS_PALLETE["crimson"] if size > free else COLORS_PALLETE["orange"]
+            color = COLORS_PALLETE["crimson"] if size > free else STATES["warning"]
             tip = "The flipbook may not fit on the disk: free some space or record fewer frames / smaller"
         self.ramusage.setStyleSheet(f"background-color: transparent; color: {color};")
         self.setInfoWarning("disk", tip, color)
