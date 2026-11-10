@@ -46,6 +46,7 @@
         "open_after": "video_folder",
         "ffmpeg_path": "",
         "video_codec": "auto",
+        "video_quality": "high",
         "exr_acescg": true,
         "exr_compression": "dwaa",
         "ldr_matte_paint": true,

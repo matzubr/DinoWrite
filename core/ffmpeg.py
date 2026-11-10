@@ -66,14 +66,32 @@ def videoFilter(srgb: bool = False, color_trc: str = "iec61966-2-1") -> str:
 # so it has no libx264: H.264 comes from OS/GPU encoders when they are compiled in, mpeg4 is always there.
 # {bitrate} is filled by videoBitrate() for encoders without a constant quality mode.
 CODECS = {
-    "libx264":           ["-c:v", "libx264", "-crf", "15", "-preset", "slow"],
+    "libx264":           ["-c:v", "libx264", "-crf", "{crf}", "-preset", "slow"],
     "h264_videotoolbox": ["-c:v", "h264_videotoolbox", "-b:v", "{bitrate}"],
     "h264_mf":           ["-c:v", "h264_mf", "-b:v", "{bitrate}"],
     "h264_nvenc":        ["-c:v", "h264_nvenc", "-b:v", "{bitrate}"],
     "h264_amf":          ["-c:v", "h264_amf", "-b:v", "{bitrate}"],
     "h264_qsv":          ["-c:v", "h264_qsv", "-b:v", "{bitrate}"],
-    "mpeg4":             ["-c:v", "mpeg4", "-q:v", "2"],
+    "mpeg4":             ["-c:v", "mpeg4", "-q:v", "{qscale}"],
 }
+
+# Settings -> Video -> Quality. Small details (thin lines, noise, text) need more bits; the file grows with them.
+# bpp: bits per pixel for the bitrate encoders (OS/GPU H.264), crf: libx264, qscale: mpeg4 (lower is better).
+VIDEO_QUALITY = {
+    "draft":    dict(bpp=0.12, crf=23, qscale=5),
+    "standard": dict(bpp=0.25, crf=18, qscale=3),
+    "high":     dict(bpp=0.5, crf=14, qscale=2),
+    "max":      dict(bpp=1.0, crf=8, qscale=1),
+}
+DEFAULT_QUALITY = "high"
+
+
+def codecArgs(codec: str, resolution: str, fps, quality: str = DEFAULT_QUALITY) -> list:
+    """Encoder arguments from CODECS for this quality level (unknown codec: just -c:v codec)"""
+    level = VIDEO_QUALITY.get(quality, VIDEO_QUALITY[DEFAULT_QUALITY])
+    values = dict(bitrate=videoBitrate(str(resolution), str(fps), level["bpp"]), crf=level["crf"],
+                  qscale=level["qscale"])
+    return [arg.format(**values) for arg in CODECS.get(codec, ["-c:v", codec])]
 AUTO_CODECS = tuple(CODECS)
 CODEC_PLACEHOLDER = "{codec}"
 
@@ -115,15 +133,15 @@ def codecCandidates(setting: str, available: set) -> list:
     return [codec for codec in AUTO_CODECS if codec in available]
 
 
-def videoBitrate(resolution: str, fps: str) -> str:
-    """~0.25 bits per pixel: visually clean preview, e.g. 1920x1080@24 -> 12M, 3840x2160@24 -> 50M"""
+def videoBitrate(resolution: str, fps: str, bpp: float = 0.25) -> str:
+    """bpp bits per pixel; 0.25 is a clean preview, e.g. 1920x1080@24 -> 12M, 3840x2160@24 -> 50M"""
     try:
         width, height = (int(v) for v in resolution.lower().split("x"))
         num, _, den = str(fps).partition("/")
         rate = float(num) / float(den or 1)
     except ValueError:
         return "20M"
-    return f"{max(4, round(width * height * rate * 0.25 / 1e6))}M"
+    return f"{max(4, round(width * height * rate * bpp / 1e6))}M"
 
 
 class FFmpeg:
@@ -146,7 +164,8 @@ class FFmpeg:
                  "Video conversion skipped, sequence is kept")
 
     def cmd(self, fps=24, resolution="1920x1080", aspect=1, start_frame=1001, input="", output="", srgb=False,
-            codec="libx264", color_trc="iec61966-2-1", comment="", audio_input=(), audio=(), metadata=()) -> list:
+            codec="libx264", color_trc="iec61966-2-1", comment="", audio_input=(), audio=(), metadata=(),
+            quality=DEFAULT_QUALITY) -> list:
         """Build ffmpeg argv from template.
 
         Template entry whose placeholder is empty is skipped entirely,
@@ -174,8 +193,7 @@ class FFmpeg:
                 commands += [str(arg) for arg in lists[key.strip()]]
                 continue
             if key.strip() == CODEC_PLACEHOLDER:
-                bitrate = videoBitrate(str(resolution), str(fps))
-                commands += [arg.format(bitrate=bitrate) for arg in CODECS.get(codec, ["-c:v", codec])]
+                commands += codecArgs(codec, resolution, fps, quality)
                 continue
             fields = [field for _, field, _, _ in string.Formatter().parse(key) if field]
             if any(str(values.get(field, "")) == "" for field in fields):

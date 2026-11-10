@@ -107,6 +107,7 @@ class ConversionJob:
             srgb=is_exr,
             color_trc=COLOR_TRC,
             comment="DinoWrite: sRGB, like MPlay after recording",
+            quality=advanced.get("video_quality", ffmpeg.DEFAULT_QUALITY),
             audio_input=audio.inputArgs(scene_audio, self.frame_range[0], fps) if scene_audio else (),
             audio=audio.outputArgs() if scene_audio else (),
             metadata=passport.ffmpegArgs(dict(self.passport, video_color="sRGB, like MPlay after recording"),

@@ -1,3 +1,4 @@
+import pytest
 from DinoWrite.core import ffmpeg
 
 
@@ -98,4 +99,14 @@ def test_codec_placeholder_expands_to_encoder_args():
     converter.cmdvar = ["ffmpeg", "-i {input}", "{codec}", "{output}"]
     converter.binary = ""
     assert converter.cmd(input="in.png", output="out.mov", codec="h264_mf", resolution="1920x1080", fps="24") == \
-        ["ffmpeg", "-i", "in.png", "-c:v", "h264_mf", "-b:v", "12M", "out.mov"]
+        ["ffmpeg", "-i", "in.png", "-c:v", "h264_mf", "-b:v", "25M", "out.mov"], "high quality by default"
+
+
+@pytest.mark.parametrize("quality, bitrate, crf, qscale", [
+    ("draft", "6M", "23", "5"), ("standard", "12M", "18", "3"), ("high", "25M", "14", "2"), ("max", "50M", "8", "1"),
+    ("unknown", "25M", "14", "2")])
+def test_quality_sets_bitrate_crf_and_qscale(quality, bitrate, crf, qscale):
+    args = lambda codec: ffmpeg.codecArgs(codec, "1920x1080", "24", quality)  # noqa: E731
+    assert args("h264_nvenc") == ["-c:v", "h264_nvenc", "-b:v", bitrate]
+    assert args("libx264")[:4] == ["-c:v", "libx264", "-crf", crf]
+    assert args("mpeg4") == ["-c:v", "mpeg4", "-q:v", qscale]
