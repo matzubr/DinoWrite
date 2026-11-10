@@ -94,7 +94,7 @@
             "height: 1px;"
         ],
         "QMenu::item:disabled":[
-            "color: #555;",
+            "color: #8a8a8a;",
             "background-color: transparent;",
             "padding: 2px 20px 2px 20px;"
         ],

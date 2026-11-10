@@ -45,7 +45,10 @@ FRAME_RANGES_DROPDOWN_DICT =  { "Global Frame Range":"$FSTART $FEND",
                                 "---":""}
 FRAME_RANGES_COMPLETER_LIST = ['$F','$FSTART','$FEND','$RFSTART','$RFEND']
 RESOLUTION_SCALES = {"1/2": 1 / 2, "2/3": 2 / 3, "×2": 2, "×3": 3}  # of the resolution in the fields
-RESOLUTION_DROPDOWN_LIST =    ["Camera Resolution","Viewport Resolution","---",*RESOLUTION_SCALES,"---"]
+RESOLUTION_SCALES_TITLE = "#Scale the current size"  # '#': a grey title, not an item (widgets.DropDownButton)
+RESOLUTION_DROPDOWN_LIST =    ["Camera Resolution","Viewport Resolution","---",RESOLUTION_SCALES_TITLE,
+                               *RESOLUTION_SCALES,"---"]
+CURRENT_MARK = "  ✓"  # menu item that is set now
 RESOLUTION_SIDE_IMAGE = ("dino_knife_cut.svg", tuple(RESOLUTION_SCALES))  # one big knife dino next to the scales
 LTR = "\u200e"  # menus are right-to-left (icons on the right): keeps "(...)" previews in place
 
@@ -507,6 +510,14 @@ class DinoWriter(RoundedWindow, QWidget):
             target = acescg.ldrColorspace(advanced.get("ldr_colorspace", "auto"))[0]
             if target:
                 parts.append(f"{self.fileFormat().upper()}: {target}")
+        resx, resy = self.currentResolution()
+        odd = self.convertvideo.isChecked() and resx and resy and (resx % 2 or resy % 2)
+        if odd:
+            parts[0] = f"Video: {resx - resx % 2}×{resy - resy % 2}, odd size cropped by 1 px"
+            self.videoline.setExtraToolTip("H.264 and most codecs need an even width and height: the video loses\n"
+                                           "the last column/row. Pick the size in the resolution menu: it's made even.")
+        self.videoline.setStyleSheet(f"background-color: transparent; color: {STATES['warning'] if odd else '#ffffff'};")
+        self.setInfoWarning("video", parts[0] if odd else "", STATES["warning"])
         animation.setTextAnimated(self.videoline, " · ".join(parts))
 
     # ---------- version ----------
@@ -730,27 +741,49 @@ class DinoWriter(RoundedWindow, QWidget):
         item = self.sender().data()
         self.filename.setText(item)
 
-    def menuResolution(self, item: str):
-        """(x, y) a resolution menu item sets, None when it can't be worked out"""
+    def menuResolution(self, item: str, even=None):
+        """(x, y) a resolution menu item sets, None when it can't be worked out.
+        Scales are always even; any size is made even (last odd pixel dropped) for the video (even=None: when
+        Convert to video is on): yuv420p/H.264 can't encode odd sizes."""
+        if even is None:
+            even = self.convertvideo.isChecked()
         if item == "Camera Resolution":
-            return tuple(int(v) for v in self.hou_viewport.cameraResolution())
-        if item == "Viewport Resolution":
-            return tuple(int(v) for v in self.hou_viewport.viewportSize())
-        if item in RESOLUTION_SCALES:
+            resolution = tuple(int(v) for v in self.hou_viewport.cameraResolution())
+        elif item == "Viewport Resolution":
+            resolution = tuple(int(v) for v in self.hou_viewport.viewportSize())
+        elif item in RESOLUTION_SCALES:
             resx, resy = helpers.toInt(self.resx.text()), helpers.toInt(self.resy.text())
             if resx is None or resy is None:
                 return None
             ratio = RESOLUTION_SCALES[item]
-            return max(round(resx * ratio), MIN_RESOLUTION_X), max(round(resy * ratio), MIN_RESOLUTION_Y)
-        x, y = item.split(" ")
-        return int(x), int(y)
+            return (max(round(resx * ratio / 2) * 2, MIN_RESOLUTION_X),
+                    max(round(resy * ratio / 2) * 2, MIN_RESOLUTION_Y))
+        else:
+            x, y = item.split(" ")
+            resolution = int(x), int(y)
+        return tuple(v - v % 2 for v in resolution) if even else resolution
 
-    def resolutionMenuText(self, item: str) -> str:
-        """'1/2  (960×540)': what the item sets, shown when the menu opens"""
-        if item not in RESOLUTION_SCALES and item not in ("Camera Resolution", "Viewport Resolution"):
-            return item.replace(" ", "×")  # custom resolutions: the value is the text
+    def currentResolution(self):
+        return helpers.toInt(self.resx.text()), helpers.toInt(self.resy.text())
+
+    def resolutionMenuText(self, item: str):
+        """('1/2  (960×540)', tooltip): what the item sets, shown when the menu opens; ✓ on the one set now,
+        '≈' when it's made even for the video"""
         resolution = self.menuResolution(item)
-        return f"{LTR}{item}  ({resolution[0]}×{resolution[1]}){LTR}" if resolution else item
+        if resolution is None:
+            return item
+        raw = resolution if item in RESOLUTION_SCALES else self.menuResolution(item, even=False)
+        size = f"{resolution[0]}×{resolution[1]}"
+        tooltip = ""
+        if raw != resolution:
+            size = "≈" + size
+            tooltip = f"{raw[0]}×{raw[1]} made even for the video: H.264 needs an even width and height"
+        elif item in RESOLUTION_SCALES:
+            tooltip = "Of the resolution in the fields, rounded to even"
+        mark = CURRENT_MARK if resolution == self.currentResolution() else ""
+        if item not in RESOLUTION_SCALES and item not in ("Camera Resolution", "Viewport Resolution"):
+            return f"{LTR}{size}{mark}{LTR}", tooltip  # custom resolutions: the value is the text
+        return f"{LTR}{item}  ({size}){mark}{LTR}", tooltip
 
     def setMenuItemResolution(self):
         item = self.sender().data()
@@ -770,7 +803,9 @@ class DinoWriter(RoundedWindow, QWidget):
         frames = [helpers.evalFrame(value) for value in self.native_ranges[item].split()]
         if len(frames) != 2 or None in frames:
             return item
-        return f"{LTR}{item}  ({frames[0]:g}–{frames[1]:g}){LTR}"
+        current = [helpers.evalFrame(line.text()) for line in (self.framestart, self.frameend)]
+        mark = CURRENT_MARK if current == frames else ""
+        return f"{LTR}{item}  ({frames[0]:g}–{frames[1]:g}){mark}{LTR}"
 
     def setMenuItemFrameRange(self):
         item = self.sender().data()

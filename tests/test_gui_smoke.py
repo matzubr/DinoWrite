@@ -218,7 +218,38 @@ def test_menus_preview_what_they_set(houdini, hou, monkeypatch):
 
     window.frame_menu.relabel()
     frames = {a.data(): a.text().strip("‎") for a in window.frame_menu.menu.actions() if a.data()}
-    assert frames["Global Frame Range"] == "Global Frame Range  (1001–1240)"
+    assert frames["Global Frame Range"] == "Global Frame Range  (1001–1240)  ✓", "the fields hold $FSTART $FEND"
+    window.close()
+
+
+def test_resolution_menu_marks_the_current_size_and_keeps_video_sizes_even(houdini, monkeypatch):
+    import DinoWrite
+
+    window = DinoWrite.show({})
+    monkeypatch.setattr(window.hou_viewport, "cameraResolution", lambda: (2251, 1084))
+    window.resx.setText("2048")
+    window.resy.setText("1080")
+    window.convertvideo.setChecked(False)
+    window.res_menu.relabel()
+    actions = window.res_menu.menu.actions()
+    assert "Scale the current size" in [a.text() for a in actions if not a.isEnabled()], "scales get a title"
+    texts = {a.data(): a.text().strip("‎") for a in actions if a.data()}
+    assert texts["2/3"] == "2/3  (1366×720)", "scales are even"
+    assert texts["2048 1080"] == "2048×1080  ✓" and "✓" not in texts["1/2"], "the size set now is ticked"
+    assert texts["Camera Resolution"] == "Camera Resolution  (2251×1084)", "pictures keep the exact size"
+
+    window.convertvideo.setChecked(True)
+    window.res_menu.relabel()
+    by_item = {a.data(): a for a in window.res_menu.menu.actions() if a.data()}
+    assert by_item["Camera Resolution"].text().strip("‎") == "Camera Resolution  (≈2250×1084)"
+    assert "even" in by_item["Camera Resolution"].toolTip()
+    by_item["Camera Resolution"].trigger()
+    assert (window.resx.text(), window.resy.text()) == ("2250", "1084")
+
+    window.resx.setText("2251")
+    window.updateStatus()
+    assert "odd size cropped" in window.videoline.text()
+    assert "odd size" in window.info_toggle.toolTip() or window.info_expanded
     window.close()
 
 

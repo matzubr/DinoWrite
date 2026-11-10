@@ -252,6 +252,7 @@ class DropDownButton(AnimatedButton, QPushButton):
         fadeMenus(self.menu)
         self.setMenu(self.menu)
         self.labeler = labeler
+        self.menu.setToolTipsVisible(True)
         if labeler is not None:
             self.menu.aboutToShow.connect(self.relabel)
 
@@ -262,6 +263,11 @@ class DropDownButton(AnimatedButton, QPushButton):
         for action_name in menu:
             if action_name=="---":
                 self.menu.addSeparator()
+                continue
+            if action_name.startswith("#"):  # a grey title over a group (no data: never triggered/relabeled)
+                title = QAction(action_name[1:], self)
+                title.setEnabled(False)
+                self.menu.addAction(title)
                 continue
             action = QAction(action_name,self)
             action.setData(action_name)
@@ -280,7 +286,9 @@ class DropDownButton(AnimatedButton, QPushButton):
             except Exception as e:  # noqa: BLE001 - a preview must never break the menu
                 log.warning("Menu preview for '%s': %s", item, e)
                 text = None
+            text, tooltip = text if isinstance(text, tuple) else (text, "")
             action.setText(text or item)
+            action.setToolTip(tooltip or "")
 
 class VersionBox(QWidget):
     """− v004 +: steps the flipbook version. Signals changed(step) with -1 / +1."""

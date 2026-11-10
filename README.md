@@ -110,7 +110,13 @@ Some OSes (macOS, some Linux window managers) don't allow windows bigger than th
 ### Resolution and frame range menus
 Every item shows in brackets what it will set, worked out when the menu opens: `Camera Resolution  (3840×2160)`,
 `Viewport Resolution  (1712×963)` (the current viewport size), `1/2  (960×540)`, `2/3`, `×2`, `×3` (of the
-resolution in the fields), `Global Frame Range  (1001–1240)`, `Playbar Frame Range`, and the presets.
+resolution in the fields, under the "Scale the current size" title, always rounded to even),
+`Global Frame Range  (1001–1240)`, `Playbar Frame Range`, and the presets. The item that matches the fields now is
+ticked `✓`.
+
+With Convert to video the sizes are made even (`Camera Resolution  (≈2250×1084)` for a 2251×1084 camera): H.264 and
+most codecs can't encode an odd width or height. An odd size typed by hand is shown in amber in the details, and the
+video loses its last column/row instead of failing.
 
 ### Camera resolution
 "Camera Resolution" in the resolution menu:
