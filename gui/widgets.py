@@ -89,6 +89,7 @@ class ColorfulLabel(Label):
                 parent=None) -> QLabel:
 
         self._parts = []
+        self._hover = ""
         super().__init__(font=font,size=size,parent=parent)
         self.setMinimumWidth(1)
         self.update(labels_list or [])
@@ -99,6 +100,11 @@ class ColorfulLabel(Label):
             return
         self._parts = list(zip(labels_list[0::2], labels_list[1::2]))
         self.updateGeometry()
+        self._elide()
+
+    def setHoverText(self, text: str):
+        """Tooltip shown always (e.g. the full path); the full text is added when it's elided"""
+        self._hover = text
         self._elide()
 
     def fullText(self) -> str:
@@ -135,7 +141,7 @@ class ColorfulLabel(Label):
             labels[longest] = label + "…"
         QLabel.setText(self, "".join(f"<font color='{color}'>{html.escape(label)}</font>"
                                      for label, (_, color) in zip(labels, self._parts) if label))
-        self.setToolTip(self.fullText() if elided else "")
+        self.setToolTip("\n\n".join(t for t in (self.fullText() if elided else "", self._hover) if t))
 
 class ElidedLabel(Label):
     """One line label that never widens its layout: text that doesn't fit ends with '…',

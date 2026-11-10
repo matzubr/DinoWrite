@@ -682,9 +682,22 @@ class DinoWriter(RoundedWindow, QWidget):
         final_list = final_list[:-len(separator)]  # no dot after the extension
         previous = self.seqname.fullText()
         self.seqname.update(final_list)
+        self.seqname.setHoverText(self.outputPath())
         if previous and self.seqname.fullText() != previous and self.isVisible():
             animation.hop(self.dino_paint)  # new name or version
             animation.refreshText(self.seqname)
+
+    def outputPath(self) -> str:
+        """Full path of the first frame the flipbook will write ($HIP etc. expanded), for the Sequence tooltip"""
+        try:
+            version = self.currentVersion()
+            name = self.paths.get("fb_name").format(name=self.filename.text(), version=version,
+                                                    fileformat=self.fileFormat())
+            path = helpers.versionFolder(self.paths.get("fb_folder"), self.filename.text(), version) / name
+        except Exception as e:  # noqa: BLE001 - a tooltip must never break the window
+            log.warning("Can't resolve the output path: %s", e)
+            return ""
+        return path.as_posix()
 
     def updateCameraLabel(self):
         animation.setTextAnimated(self.cameraname, f"Camera: {self.hou_viewport.cameraName()}")

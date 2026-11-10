@@ -268,3 +268,16 @@ def test_version_steps_and_warns_about_overwriting(houdini, hou, monkeypatch, tm
     window.filename.setText("other")
     assert window.collectData()["version"] == "", "another name starts automatic"
     window.close()
+
+
+def test_sequence_hover_shows_the_full_path(houdini, hou, monkeypatch, tmp_path):
+    import DinoWrite
+
+    monkeypatch.setattr(hou, "text", type("T", (), {"expandString": staticmethod(
+        lambda s: s.replace("$HIP", tmp_path.as_posix()))}), raising=False)
+    window = DinoWrite.show({})
+    window.paths["fb_folder"] = "$HIP/preview/{name}"
+    window.filename.setText("shot")
+    window.updateColorfulLabel()
+    assert window.seqname.toolTip() == (tmp_path / "preview/shot/v001/shot.v001.$F4.exr").resolve().as_posix()
+    window.close()
