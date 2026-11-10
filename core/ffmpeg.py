@@ -43,6 +43,9 @@ def findFFmpeg(custom_path: str = "") -> str:
 SRGB_EXPRESSION = "if(lte(val/maxval,0.0031308),12.92*val,maxval*(1.055*pow(val/maxval,1/2.4)-0.055))"
 
 
+EVEN_CROP = "crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0"
+
+
 def videoFilter(srgb: bool = False, color_trc: str = "iec61966-2-1") -> str:
     """ffmpeg -vf chain: optional linear -> sRGB curve, then BT.709 RGB -> YUV conversion.
 
@@ -52,7 +55,8 @@ def videoFilter(srgb: bool = False, color_trc: str = "iec61966-2-1") -> str:
     filters = []
     if srgb:
         filters += ["format=rgb48le", f"lutrgb=r='{SRGB_EXPRESSION}':g='{SRGB_EXPRESSION}':b='{SRGB_EXPRESSION}'"]
-    filters += ["scale=out_color_matrix=bt709:out_range=tv", "format=yuv420p",
+    # yuv420p (H.264 and most codecs) needs even width and height: an odd size loses its last column/row
+    filters += [EVEN_CROP, "scale=out_color_matrix=bt709:out_range=tv", "format=yuv420p",
                 # Tag frames explicitly: newer ffmpeg passes EXR "linear" trc through filters
                 # and it overrides -color_trc/-color_primaries output options
                 f"setparams=color_primaries=bt709:color_trc={color_trc}:colorspace=bt709:range=tv"]

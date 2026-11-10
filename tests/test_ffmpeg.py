@@ -44,7 +44,8 @@ def test_ffmpeg_cmd_uses_resolved_binary():
 
 
 def test_video_filter():
-    assert ffmpeg.videoFilter().startswith("scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=")
+    assert ffmpeg.videoFilter().startswith("crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0,"
+                                           "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=")
     vf = ffmpeg.videoFilter(srgb=True)
     assert vf.startswith("format=rgb48le,lutrgb=r='")
     assert "lutrgb" in vf and vf.endswith(ffmpeg.videoFilter())
