@@ -166,3 +166,45 @@ def test_open_folder_opens_root_before_name(monkeypatch, tmp_path):
     settings_dialog.openFolder("$HIP/preview/{name}")
     settings_dialog.openFolder("$HIP/not_yet/{name}")  # doesn't exist yet: the nearest parent
     assert opened == [tmp_path / "preview", tmp_path]
+
+
+def test_changed_settings_are_marked(dialog):
+    assert not dialog.changedKeys(), "defaults: nothing marked"
+    title = dialog.row_titles[dialog.exr_compression]
+    assert "●" not in title.text()
+    dialog.exr_compression.setCurrentIndex(dialog.exr_compression.findData("zip"))
+    assert "●" in title.text() and ("advanced", "exr_compression") in dialog.changedKeys()
+    dialog.video_audio.setChecked(False)
+    assert dialog.video_audio.font().bold(), "checkboxes: bold when changed"
+    dialog.video_audio.setChecked(True)
+    assert not dialog.video_audio.font().bold()
+
+
+def test_footer_and_destructive_options(dialog):
+    from DinoWrite import config
+    from DinoWrite.gui import widgets
+
+    buttons = {b.text(): b for b in dialog.footer.findChildren(widgets.PushButton)}
+    assert config.userSettingsPath().as_posix() in buttons["Open settings folder"].toolTip(), "path only in the tooltip"
+    assert "square-check-red" in dialog.delete_input.styleSheet(), "a destructive option is red when on"
+    assert "#b78620" in buttons["Save"].styleSheet(), "Save is the primary button"
+
+
+def test_folder_preview_warns_about_missing_folder_and_unknown_variables(dialog, tmp_path):
+    from DinoWrite.gui.theme import STATES
+
+    dialog.fb_folder.setText((tmp_path / "missing" / "{name}").as_posix())
+    assert "will be created" in dialog.folder_preview.text()
+    assert "first WRITE" in dialog.folder_preview.toolTip()
+    assert STATES["warning"] in dialog.folder_preview.styleSheet()
+    dialog.fb_folder.setText((tmp_path / "{name}").as_posix())
+    assert "(" not in dialog.folder_preview.text()
+    dialog.fb_folder.setText("$NOPE/{name}")
+    assert "unknown variable $NOPE" in dialog.folder_preview.text()
+    assert STATES["error"] in dialog.folder_preview.styleSheet()
+
+
+def test_long_choices_are_short_with_the_full_text_in_the_tooltip(dialog):
+    combo = dialog.true_resolution
+    assert all(len(combo.itemText(i)) <= 34 for i in range(combo.count()))
+    assert "bigger than the maximized viewport" in combo.toolTip()

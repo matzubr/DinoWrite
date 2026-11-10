@@ -76,9 +76,16 @@ Click the gear button in the window title. Tabs:
 
 | tab | what |
 |---|---|
-| General | flipbooks folder (folder button: choose it, `$JOB`/`$HIP` are put back into the path; arrow button: open it), file name template (click a variable chip to insert it, the line below shows what it turns into), recording viewer, EXR compression, incomplete flipbook cleanup, ACEScg |
-| Video | what to open after writing, scene audio, sequence cleanup; shows which ffmpeg and encoders are found |
+| General | **Output**: flipbooks folder (Browse…: choose it, `$JOB`/`$HIP` are put back into the path; arrow button: open it), file name template (click a variable chip to insert it; the line below shows what it turns into: yellow when the folder doesn't exist yet, red for an unknown variable or placeholder), EXR compression, incomplete flipbook cleanup. **Viewer**: where to record. **Color management**: ACEScg, PNG/JPG to matte_paint |
+| Video | **After recording**: what to open, scene audio, sequence cleanup. **Tools**: which ffmpeg, encoders, oiiotool, PyOpenColorIO are found |
 | Presets | resolution and frame range presets for the dropdown menus |
+
+Settings that differ from the defaults get a dot before the label (bold text for checkboxes). Destructive options
+(delete the sequence) are red while they're on. Reset to defaults asks first; the settings file path is in the
+tooltip of "Open settings folder".
+
+Colors mean the same in both windows: neutral light border on hover, blue on the field being typed into, gold for
+the selected tab / primary button / changed settings, amber for warnings (works, but check it), red for errors.
 
 ffmpeg path, encoder and the ffmpeg command template (`advanced.ffmpeg_path`, `advanced.video_codec`, `ffmpeg_cmd`)
 are only in the settings file: they work out of the box.

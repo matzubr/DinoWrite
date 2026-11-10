@@ -11,19 +11,25 @@ from . import animation, widgets
 from .frameless import RoundedWindow, TitleBar
 from .qt import *  # noqa: F403
 from .resources import ICONS_FOLDER
-from .theme import COLORS
+from .theme import COLORS, STATES
 
 EXR_COMPRESSION = (("dwaa", "DWAA (small, for previews)"), ("zip", "ZIP (lossless)"),
                    ("piz", "PIZ (lossless, grainy images)"), ("none", "None"))
+# (key, short text, full text in the item tooltip)
 TRUE_RESOLUTION = (
-    ("auto", "Separate viewer window when resolution is bigger than the viewport"),
-    ("always", "Always record in a separate viewer window"),
-    ("off", "Maximized viewport (Houdini scales to the resolution)"),
+    ("auto", "Separate window if res > viewport",
+     "Record in a separate viewer window when the resolution is bigger than the maximized viewport"),
+    ("always", "Always a separate window", "Always record in a separate viewer window sized to the resolution"),
+    ("off", "Maximized viewport (scaled)", "Record in the maximized viewport: Houdini scales it to the resolution"),
 )
 OPEN_AFTER = (
-    ("video_folder", "Converted video and its folder"),
-    ("video", "Converted video (or the folder without conversion)"),
-    ("folder", "Folder with the sequence"),
+    ("video_folder", "Video and its folder", "The converted video in the player and its folder with it selected"),
+    ("video", "Video", "The converted video in the default player (the folder when there's no video)"),
+    ("folder", "Sequence folder", "The folder with the image sequence (drag it into Nuke)"),
+)
+LDR_COLORSPACES = (
+    ("acescct", "ACEScct", "matte_paint of the ACES 1.3 cg/studio configs since cg-config v2.1"),
+    ("srgb_texture", "sRGB - Texture", "matte_paint of cg-config v1 and Nuke's aces_1.2: brightest parts greyish"),
 )
 FRAME_TOKEN = re.compile(r"\$F\d+")
 FOLDER_TOKENS = (("{name}", "Flipbook name from the window"),
@@ -32,9 +38,25 @@ NAME_TOKENS = (("{name}", "Flipbook name from the window"), ("{version}", "v001,
                ("{fileformat}", "exr / png / jpg"), ("$F4", "Frame number, 4 digits: 1001"))
 PREVIEW_VALUES = {"name": "shot_010", "version": "v001", "fileformat": "exr"}
 PREVIEW_COLOR = "#8a8a8a"
-CHIP_STYLE = """
-QPushButton { padding: 1px 8px; border-radius: 9px; color: #e0c27a; }
+CHIP_STYLE = f"""
+QPushButton {{ padding: 1px 8px; border-radius: 9px; color: #f3d58c; background-color: #3b3220;
+              border: 1px solid #7a6127; }}
+QPushButton:hover {{ color: #ffffff; background-color: #5c4a1f; border: 1px solid {STATES['selected']}; }}
+QPushButton:pressed {{ background-color: #2a2416; }}
 """
+SECTION_TITLE_STYLE = "background: transparent; color: #9a9a9a; letter-spacing: 1px;"
+# Destructive options: red when ON (off looks like any other checkbox)
+DANGER_STYLE = f"""
+QCheckBox::indicator:checked {{ image: url(icons:square-check-red.svg); }}
+QCheckBox:checked {{ color: {COLORS['crimson']}; }}
+"""
+# Primary action: the accent color; secondary buttons stay neutral
+PRIMARY_STYLE = f"""
+QPushButton {{ background-color: {STATES['selected']}; color: #141414; border: 1px solid #d6a234; font-weight: bold; }}
+QPushButton:hover {{ background-color: #cf9a2a; border: 1px solid #f0c060; }}
+QPushButton:pressed {{ background-color: #94701e; }}
+"""
+CHANGED_DOT = f"<span style='color:{STATES['changed']}'>●</span> "
 
 
 def expand(path: str) -> str:
@@ -97,8 +119,8 @@ DIALOG_WIDTH = 620
 LABEL_WIDTH = 140
 SECTION_NAME = "DinoWriteSettingsSection"
 TOOLS = ("ffmpeg", "Encoders", "oiiotool", "PyOpenColorIO")
-TAB_CHECKED_STYLE = """
-QPushButton:checked { background-color: rgba(183, 134, 32, 20%); border: 1px solid #b78620; color: #ffffff; }
+TAB_CHECKED_STYLE = f"""
+QPushButton:checked {{ background-color: rgba(183, 134, 32, 20%); border: 1px solid {STATES['selected']}; color: #ffffff; }}
 """
 
 
@@ -141,10 +163,14 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.tab_buttons = []
         tab_row = QHBoxLayout()
         tab_row.setSpacing(6)
-        for index, (title, page) in enumerate((("General", self._generalTab()), ("Video", self._videoTab()),
-                                                ("Presets", self._presetsTab()))):
+        self.row_titles = {}
+        tabs = (("General", self._generalTab(), "Where flipbooks go, how they're recorded, colors for Nuke"),
+                ("Video", self._videoTab(), "After the video: what opens, sound, clean up; found tools"),
+                ("Presets", self._presetsTab(), "Resolutions and frame ranges in the window's menus"))
+        for index, (title, page, tip) in enumerate(tabs):
             self.pages.addWidget(page)
             button = widgets.PushButton(title)
+            button.setToolTip(tip)
             button.setCheckable(True)
             button.setCursor(Qt.PointingHandCursor)
             button.setStyleSheet(widgets.styles.get("mainbutton") + TAB_CHECKED_STYLE)
@@ -153,32 +179,34 @@ class SettingsDialog(RoundedWindow, QDialog):
             tab_row.addWidget(button)
         self.tab_buttons[0].setChecked(True)
 
-        user_file = widgets.ElidedLabel(f"User settings: {config.userSettingsPath().as_posix()}")
-        user_file.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        user_file.setCursor(Qt.IBeamCursor)
-
         save_button = widgets.PushButton("Save")
         cancel_button = widgets.PushButton("Cancel")
         reset_button = widgets.PushButton("Reset to defaults")
         folder_button = widgets.PushButton("Open settings folder")
         for button in (save_button, cancel_button, reset_button, folder_button):
             button.setCursor(Qt.PointingHandCursor)
+        save_button.setStyleSheet(widgets.styles.get("mainbutton") + PRIMARY_STYLE)
+        save_button.setToolTip("Save and reopen DinoWrite with the new settings")
+        cancel_button.setToolTip("Close without saving")
+        reset_button.setToolTip("All settings back to the defaults (asks first)")
+        folder_button.setToolTip(f"Open the folder of your settings file:\n{config.userSettingsPath().as_posix()}")
         save_button.clicked.connect(self.save)
         cancel_button.clicked.connect(lambda: self.fadeOut(self.reject))
         reset_button.clicked.connect(self.resetToDefaults)
         folder_button.clicked.connect(self.openSettingsFolder)
+        # Reset alone on the left, away from the harmless buttons; Save is the main one
         buttons = QHBoxLayout()
         buttons.addWidget(reset_button)
-        buttons.addWidget(folder_button)
         buttons.addStretch()
+        buttons.addWidget(folder_button)
+        buttons.addSpacing(12)
         buttons.addWidget(cancel_button)
         buttons.addWidget(save_button)
         self.save_button = save_button
 
         footer = self._frame()
         footer_layout = QVBoxLayout(footer)
-        footer_layout.setContentsMargins(10, 6, 10, 8)
-        footer_layout.addWidget(user_file)
+        footer_layout.setContentsMargins(10, 8, 10, 8)
         footer_layout.addLayout(buttons)
 
         body = QWidget()
@@ -197,6 +225,7 @@ class SettingsDialog(RoundedWindow, QDialog):
         layout.addWidget(body)
 
         self.load(self.settings)
+        self._watchChanges()
         self.adjustSize()
 
     # ---------- tabs ----------
@@ -207,6 +236,9 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.fb_name = QLineEdit()
         self.fb_name.setToolTip("File name template: {name}, {version}, {fileformat} and a frame token like $F4")
         self.delete_incomplete = widgets.CheckBox("Delete flipbook if it doesn't cover the frame range")
+        self.delete_incomplete.setStyleSheet(self.delete_incomplete.styleSheet() + DANGER_STYLE)
+        self.delete_incomplete.setToolTip("Deletes the frames when recording stopped early (Esc, crash):\n"
+                                          "fewer frames than the range minus a small tolerance")
         self.exr_acescg = widgets.CheckBox("Convert EXR to ACEScg (for Nuke)")
         self.exr_acescg.setToolTip(
             "Opens right in Nuke with an ACES config (ACEScg is the default for EXR there).\n"
@@ -224,9 +256,9 @@ class SettingsDialog(RoundedWindow, QDialog):
         detected, why = acescg.ldrColorspace("auto")
         self.ldr_colorspace.addItem(f"Auto: {detected}" if detected else "Auto (OCIO config not readable)", "auto")
         self.ldr_colorspace.setItemData(0, why, Qt.ToolTipRole)
-        for key, label in (("acescct", "ACEScct (matte_paint of cg-config v2.1+)"),
-                           ("srgb_texture", "sRGB - Texture (matte_paint of cg-config v1, aces_1.2)")):
+        for key, label, tip in LDR_COLORSPACES:
             self.ldr_colorspace.addItem(label, key)
+            self.ldr_colorspace.setItemData(self.ldr_colorspace.count() - 1, tip, Qt.ToolTipRole)
         self.ldr_colorspace.setToolTip(
             "What PNG/JPG are converted to: what Nuke's matte_paint role is.\n"
             f"Auto: the matte_paint role of Houdini's OCIO config ({why}),\n"
@@ -241,24 +273,25 @@ class SettingsDialog(RoundedWindow, QDialog):
             "passport in the header (hip, camera, frame range...: Nuke Read -> Metadata).\n"
             "DWAA: several times smaller, visually lossless for a preview, fast in Nuke.")
         self.true_resolution = QComboBox()
-        for key, label in TRUE_RESOLUTION:
+        for key, label, tip in TRUE_RESOLUTION:
             self.true_resolution.addItem(label, key)
-        self.true_resolution.setToolTip(
+            self.true_resolution.setItemData(self.true_resolution.count() - 1, tip, Qt.ToolTipRole)
+        self._comboTooltip(self.true_resolution,
             "A 4K flipbook on a 2K monitor: a floating copy of the viewer is sized to the resolution\n"
             "(bigger than the screen), so frames are rendered at true 4K instead of being stretched")
 
-        browse = widgets.PushButton("")
-        browse.setIcon(QIcon((ICONS_FOLDER / "folder-open.svg").as_posix()))
-        browse.setFixedSize(QSize(28, 28))
+        # "Browse…" chooses, the arrow icon opens: different looks for different actions
+        browse = widgets.PushButton("Browse…", size=widgets.MAIN_SIZE - 1)
+        browse.setFixedHeight(28)
         browse.setCursor(Qt.PointingHandCursor)
-        browse.setToolTip("Choose the folder ($JOB / $HIP are put back into the path)")
+        browse.setToolTip("Choose the flipbooks folder\n($JOB / $HIP are put back into the path, /{name} is kept)")
         browse.clicked.connect(self.browseFolder)
         self.browse_button = browse
         open_folder = widgets.PushButton("")
         open_folder.setIcon(QIcon((ICONS_FOLDER / "folder-arrow.svg").as_posix()))
         open_folder.setFixedSize(QSize(28, 28))
         open_folder.setCursor(Qt.PointingHandCursor)
-        open_folder.setToolTip("Open the flipbooks folder in the file browser")
+        open_folder.setToolTip("Open the flipbooks folder in the file browser\n(its nearest existing parent if it isn't there yet)")
         open_folder.clicked.connect(lambda: openFolder(self.fb_folder.text().strip()))
         self.open_button = open_folder
         folder_row = QWidget()
@@ -279,19 +312,26 @@ class SettingsDialog(RoundedWindow, QDialog):
                            ("", self.folder_preview),
                            ("File name", self.fb_name),
                            ("", self._tokens(self.fb_name, NAME_TOKENS)),
-                           ("", self.name_preview)]),
-            self._section([("Record viewer", self.true_resolution), ("", self.delete_incomplete)]),
-            self._section([("EXR compression", self.exr_compression), ("", self.exr_acescg),
-                           ("", self.ldr_matte_paint), ("PNG/JPG colors", self.ldr_colorspace)]))
+                           ("", self.name_preview),
+                           ("EXR compression", self.exr_compression),
+                           ("", self.delete_incomplete)], title="Output"),
+            self._section([("Record viewer", self.true_resolution)], title="Viewer"),
+            self._section([("", self.exr_acescg), ("", self.ldr_matte_paint),
+                           ("PNG/JPG colors", self.ldr_colorspace)], title="Color management"))
 
     def _videoTab(self) -> QWidget:
         self.delete_input = widgets.CheckBox("Delete image sequence after successful conversion")
+        self.delete_input.setStyleSheet(self.delete_input.styleSheet() + DANGER_STYLE)
+        self.delete_input.setToolTip("Only the video is kept: the recorded frames are deleted once it's written\n"
+                                     "(no ACEScg EXR / PNG for Nuke then)")
         self.video_audio = widgets.CheckBox("Add scene audio (the file in the Audio panel)")
         self.video_audio.setToolTip("The sound file set in Houdini's Audio panel (playbar sound), synced\n"
                                     "like in the playbar. Nothing happens when no file is set.")
         self.open_after = QComboBox()
-        for key, label in OPEN_AFTER:
+        for key, label, tip in OPEN_AFTER:
             self.open_after.addItem(label, key)
+            self.open_after.setItemData(self.open_after.count() - 1, tip, Qt.ToolTipRole)
+        self._comboTooltip(self.open_after, "What opens when the flipbook is done (with 'Open result' on)")
         # One row per tool (a multi-line label in a form layout gets a wrong height and rows overlap)
         self.tool_values = {}
         for key in TOOLS:
@@ -303,8 +343,10 @@ class SettingsDialog(RoundedWindow, QDialog):
                       "ffmpeg_cmd; oiiotool: advanced.oiiotool_path in the user settings file")
 
         return self._page(
-            self._section([("Open result", self.open_after), ("", self.video_audio), ("", self.delete_input)]),
-            self._section([(key, value) for key, value in self.tool_values.items()], hint=tools_hint))
+            self._section([("Open result", self.open_after), ("", self.video_audio), ("", self.delete_input)],
+                          title="After recording"),
+            self._section([(key, value) for key, value in self.tool_values.items()], hint=tools_hint,
+                          title="Tools"))
 
     def _presetsTab(self) -> QWidget:
         self.resolutions = QPlainTextEdit()
@@ -314,9 +356,12 @@ class SettingsDialog(RoundedWindow, QDialog):
         for edit in (self.resolutions, self.frame_ranges):
             edit.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
             edit.setMinimumHeight(90)
+        self.resolutions.setToolTip("The resolution menu, below Camera / Viewport and the scales")
+        self.frame_ranges.setToolTip("The frame range menu, below Global / Playbar. Any hscript expression: $F, $FEND...")
         return self._page(
-            self._section([("Resolutions", self.resolutions)], hint="one per line: width height"),
-            self._section([("Frame ranges", self.frame_ranges)], hint="one per line: name = start end"))
+            self._section([("Resolutions", self.resolutions)], hint="one per line: width height", title="Resolution menu"),
+            self._section([("Frame ranges", self.frame_ranges)], hint="one per line: name = start end",
+                          title="Frame range menu"))
 
     def _tokens(self, field: QLineEdit, tokens) -> QWidget:
         """Small buttons with the variables a template understands: click inserts it at the cursor"""
@@ -348,9 +393,19 @@ class SettingsDialog(RoundedWindow, QDialog):
     def updatePreviews(self):
         """What the templates turn into for an example flipbook"""
         folder, name = self.fb_folder.text().strip(), self.fb_name.text().strip()
+        folder_color = PREVIEW_COLOR
+        label_tip = ""
         try:
-            folder_text = "→ " + posixpath.normpath(expand(folder.format(**PREVIEW_VALUES)).replace("\\", "/"))
-            folder_ok = True
+            resolved = posixpath.normpath(expand(folder.format(**PREVIEW_VALUES)).replace("\\", "/"))
+            folder_text, folder_ok = "→ " + resolved, True
+            unknown = re.search(r"\$\w+", resolved)
+            root = expand(folder.split("{name}")[0]).rstrip("/\\") or resolved
+            if unknown:
+                folder_text, folder_ok = f"{folder_text}   (unknown variable {unknown[0]})", False
+            elif not Path(root).is_dir():
+                folder_text += "   (will be created)"
+                folder_color = STATES["warning"]
+                label_tip = "The folder doesn't exist yet: it's created on the first WRITE (DinoWrite asks first)"
         except (KeyError, IndexError, ValueError) as e:
             folder_text, folder_ok = f"Unknown placeholder {e}", False
         try:
@@ -360,8 +415,11 @@ class SettingsDialog(RoundedWindow, QDialog):
                 name_text += "   (needs a frame token like $F4)"
         except (KeyError, IndexError, ValueError) as e:
             name_text, name_ok = f"Unknown placeholder {e}", False
-        for label, text, ok in ((self.folder_preview, folder_text, folder_ok), (self.name_preview, name_text, name_ok)):
-            color = PREVIEW_COLOR if ok else COLORS["crimson"]
+        for label, text, ok, color in ((self.folder_preview, folder_text, folder_ok, folder_color),
+                                       (self.name_preview, name_text, name_ok, PREVIEW_COLOR)):
+            color = color if ok else STATES["error"]
+            if label is self.folder_preview:
+                label.setExtraToolTip(label_tip)
             label.setStyleSheet(f"background: transparent; color: {color};")
             animation.setTextAnimated(label, text)
 
@@ -376,24 +434,43 @@ class SettingsDialog(RoundedWindow, QDialog):
         chosen = chosen.rstrip("/")
         self.fb_folder.setText(f"{chosen}/{{name}}" if keeps_name else chosen)
 
-    def _section(self, rows, hint: str = "") -> QWidget:
-        """Grey frame like the main window's blocks, bold right-aligned labels"""
+    def _section(self, rows, hint: str = "", title: str = "") -> QWidget:
+        """Grey frame like the main window's blocks with a small title, bold right-aligned labels"""
         frame = self._frame()
-        form = QFormLayout(frame)
-        form.setContentsMargins(10, 8, 10, 8)
+        outer = QVBoxLayout(frame)
+        outer.setContentsMargins(10, 6, 10, 8)
+        outer.setSpacing(4)
+        if title:
+            heading = widgets.Label(title.upper(), size=widgets.MAIN_SIZE - 3, weight="bold")
+            heading.setStyleSheet(SECTION_TITLE_STYLE)
+            outer.addWidget(heading)
+        form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)
         form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         form.setHorizontalSpacing(10)
+        outer.addLayout(form)
         for label, field in rows:
             if label:
-                title = widgets.HBLabel(label)
-                title.setFixedWidth(LABEL_WIDTH)
+                row_title = widgets.HBLabel(label)
+                row_title.setFixedWidth(LABEL_WIDTH)
+                row_title.setTextFormat(Qt.RichText)
+                row_title.base_text = label
+                self.row_titles[field] = row_title
                 if hint:
-                    title.setToolTip(hint)
+                    row_title.setToolTip(hint)
                     field.setToolTip(hint)
-                form.addRow(title, field)
+                form.addRow(row_title, field)
             else:
                 form.addRow(self._spacer(), field)
         return frame
+
+    @staticmethod
+    def _comboTooltip(combo: QComboBox, about: str):
+        """Tooltip: what the setting is about + the full text of the chosen item"""
+        def update():
+            combo.setToolTip(f"{about}\n\n{combo.currentData(Qt.ToolTipRole) or combo.currentText()}")
+        combo.currentIndexChanged.connect(update)
+        update()
 
     @staticmethod
     def _frame() -> QFrame:
@@ -509,6 +586,54 @@ class SettingsDialog(RoundedWindow, QDialog):
     @staticmethod
     def _lines(edit: QPlainTextEdit) -> list:
         return [line.strip() for line in edit.toPlainText().splitlines() if line.strip()]
+
+    # ---------- changed from default ----------
+
+    def _tracked(self) -> list:
+        """(section, key, widget) of every setting a widget edits"""
+        return [("paths", "fb_folder", self.fb_folder), ("paths", "fb_name", self.fb_name),
+                ("advanced", "exr_compression", self.exr_compression),
+                ("advanced", "delete_incomplete_fb", self.delete_incomplete),
+                ("advanced", "true_resolution", self.true_resolution),
+                ("advanced", "exr_acescg", self.exr_acescg), ("advanced", "ldr_matte_paint", self.ldr_matte_paint),
+                ("advanced", "ldr_colorspace", self.ldr_colorspace), ("advanced", "open_after", self.open_after),
+                ("advanced", "video_audio", self.video_audio),
+                ("advanced", "conversion_delete_input_sequence", self.delete_input),
+                ("custom_resolution", None, self.resolutions), ("custom_framerange", None, self.frame_ranges)]
+
+    def _watchChanges(self):
+        for _, _, widget in self._tracked():
+            for signal in ("textChanged", "currentIndexChanged", "toggled"):
+                if hasattr(widget, signal):
+                    getattr(widget, signal).connect(self.markChanged)
+            if isinstance(widget, QCheckBox):
+                widget.clicked.connect(self.markChanged)  # after CheckBox's own bold-on-click
+        self.markChanged()
+
+    def changedKeys(self) -> set:
+        """Settings that differ from the defaults (as the widgets show them now)"""
+        settings, _ = self.collect()
+        defaults = config.defaults()
+        changed = set()
+        for section, key, _ in self._tracked():
+            value = settings[section] if key is None else settings[section].get(key)
+            default = defaults.get(section) if key is None else defaults.get(section, {}).get(key)
+            if value != default:
+                changed.add((section, key))
+        return changed
+
+    def markChanged(self):
+        """A dot before the label (bold text for checkboxes) where the value isn't the default"""
+        changed = self.changedKeys()
+        for section, key, widget in self._tracked():
+            is_changed = (section, key) in changed
+            title = self.row_titles.get(widget)
+            if title is not None:
+                title.setText((CHANGED_DOT if is_changed else "") + title.base_text)
+            elif isinstance(widget, QCheckBox):
+                font = widget.font()
+                font.setBold(is_changed)
+                widget.setFont(font)
 
     # ---------- reactions ----------
 
