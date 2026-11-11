@@ -63,10 +63,11 @@ def test_compression_and_audio_options_are_saved(dialog, tmp_path):
 
 def test_validation_errors(dialog):
     dialog.fb_name.setText("{name}.{version}.{fileformat}")
-    dialog.resolutions.setPlainText("1920 1080\nwide")
-    dialog.frame_ranges.setPlainText("Broken range")
+    dialog.resolutions.setRows([["1920", "1080"], ["wide", ""]])
+    dialog.frame_ranges.setRows([["Broken range", "$F+1", "$FEND"]])
     _, errors = dialog.collect()
     assert len(errors) == 3
+    assert "a whole number above 0" in errors[1] and "$RFSTART" in errors[2]
 
 
 def test_unknown_template_placeholder_is_rejected(dialog):
@@ -77,8 +78,8 @@ def test_unknown_template_placeholder_is_rejected(dialog):
 
 def test_save_writes_only_changes(dialog, tmp_path):
     dialog.open_after.setCurrentIndex(dialog.open_after.findData("folder"))
-    dialog.resolutions.setPlainText("4096   2160\n1920 1080")
-    dialog.frame_ranges.setPlainText("Shot = 1001 1100")
+    dialog.resolutions.setRows([[" 4096 ", "2160"], ["1920", "1080"]])
+    dialog.frame_ranges.setRows([["Shot", "1001", "1100"]])
     dialog.save()
 
     stored = json.loads((tmp_path / "user_settings.json").read_text())
@@ -99,7 +100,7 @@ def test_gear_button_reopens_window_with_new_settings(houdini, monkeypatch, tmp_
     window.filename.setText("my_shot")
 
     def fake_exec(dialog):
-        dialog.resolutions.setPlainText("777 333")
+        dialog.resolutions.setRows([["777", "333"]])
         dialog.save()
         return QDialog.Accepted
 
@@ -218,3 +219,28 @@ def test_video_quality_is_saved(dialog, tmp_path):
     dialog.save()
     stored = json.loads((tmp_path / "user_settings.json").read_text())
     assert stored == {"advanced": {"video_quality": "max"}}
+
+
+def test_preset_tables(dialog):
+    from DinoWrite.gui.qt import QLineEdit, QStyleOptionViewItem, QTableWidgetItem, QValidator
+
+    table = dialog.frame_ranges
+    assert table.rows() == [["From Current Frame To Global End", "$F", "$FEND"],
+                            ["From Global Start To Current Frame", "$FSTART", "$F"],
+                            ["From Current Frame To Playbar End", "$F", "$RFEND"],
+                            ["From Playbar Start To Current Frame", "$RFSTART", "$F"]], "loaded from the settings"
+    rows = table.rowCount()
+    table.item(rows - 1, 0).setText("Shot")  # typing in the empty last row adds a new empty one
+    assert table.rowCount() == rows + 1 and table.invalidRows() == [(["Shot", "", ""], [table.tips[1], table.tips[2]])]
+    assert ("custom_framerange", None) in dialog.changedKeys()
+    table.removeRows([rows - 1, rows])  # the empty last row stays
+    assert table.rowCount() == rows and not table.invalidRows()
+
+    def accepts(table, column, text):
+        editor = table.itemDelegate().createEditor(table.viewport(), QStyleOptionViewItem(), table.model().index(0, column))
+        return isinstance(editor, QLineEdit) and editor.validator().validate(text, 0)[0] != QValidator.Invalid
+
+    assert accepts(table, 1, "$RFS") and accepts(table, 1, "-12") and not accepts(table, 1, "$F+1")
+    assert accepts(dialog.resolutions, 0, "4096") and not accepts(dialog.resolutions, 0, "0")
+    assert not accepts(dialog.resolutions, 1, "-5") and not accepts(dialog.resolutions, 1, "1.5")
+    assert isinstance(table.item(0, 0), QTableWidgetItem)

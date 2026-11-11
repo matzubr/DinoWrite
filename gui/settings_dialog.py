@@ -7,7 +7,7 @@ from pathlib import Path
 from .. import config
 from ..core import acescg, ffmpeg
 from ..core.log import log
-from . import animation, widgets
+from . import animation, preset_table, widgets
 from .frameless import RoundedWindow, TitleBar
 from .qt import *  # noqa: F403
 from .resources import ICONS_FOLDER
@@ -363,19 +363,14 @@ class SettingsDialog(RoundedWindow, QDialog):
                           title="Tools"))
 
     def _presetsTab(self) -> QWidget:
-        self.resolutions = QPlainTextEdit()
-        self.resolutions.setPlaceholderText("1920 1080")
-        self.frame_ranges = QPlainTextEdit()
-        self.frame_ranges.setPlaceholderText("From Current Frame To Global End = $F $FEND")
-        for edit in (self.resolutions, self.frame_ranges):
-            edit.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-            edit.setMinimumHeight(90)
-        self.resolutions.setToolTip("The resolution menu, below Camera / Viewport and the scales")
-        self.frame_ranges.setToolTip("The frame range menu, below Global / Playbar. Any hscript expression: $F, $FEND...")
+        self.resolutions = preset_table.resolutionTable()
+        self.frame_ranges = preset_table.frameRangeTable()
+        edit = "Type in the empty last row to add one, Del removes the selected rows"
         return self._page(
-            self._section([("Resolutions", self.resolutions)], hint="one per line: width height", title="Resolution menu"),
-            self._section([("Frame ranges", self.frame_ranges)], hint="one per line: name = start end",
-                          title="Frame range menu"))
+            self._section([("Resolutions", self.resolutions)], title="Resolution menu",
+                          hint=f"The resolution menu, below Camera / Viewport and the scales.\n{edit}"),
+            self._section([("Frame ranges", self.frame_ranges)], title="Frame range menu",
+                          hint=f"The frame range menu, below Global / Playbar.\n{edit}"))
 
     def _tokens(self, field: QLineEdit, tokens) -> QWidget:
         """Small buttons with the variables a template understands: click inserts it at the cursor"""
@@ -544,9 +539,8 @@ class SettingsDialog(RoundedWindow, QDialog):
         self.video_quality.setCurrentIndex(max(self.video_quality.findData(
             advanced.get("video_quality", ffmpeg.DEFAULT_QUALITY)), 0))
 
-        self.resolutions.setPlainText("\n".join(settings.get("custom_resolution", [])))
-        self.frame_ranges.setPlainText("\n".join(
-            f"{name} = {value}" for name, value in settings.get("custom_framerange", {}).items()))
+        self.resolutions.setRows([line.split() for line in settings.get("custom_resolution", [])])
+        self.frame_ranges.setRows([[name, *value.split()] for name, value in settings.get("custom_framerange", {}).items()])
 
         self._updateToolsStatus(advanced)
         self.updatePreviews()
@@ -580,29 +574,15 @@ class SettingsDialog(RoundedWindow, QDialog):
         advanced["open_after"] = self.open_after.currentData()
         advanced["video_quality"] = self.video_quality.currentData()
 
-        resolutions = []
-        for line in self._lines(self.resolutions):
-            parts = line.split()
-            if len(parts) != 2 or not all(p.isdigit() for p in parts):
-                errors.append(f"Resolution '{line}' should be: width height")
-            else:
-                resolutions.append(" ".join(parts))
-        settings["custom_resolution"] = resolutions
+        for values, wrong in self.resolutions.invalidRows():
+            errors.append(f"Resolution '{' '.join(values)}': " + "; ".join(wrong))
+        settings["custom_resolution"] = [" ".join(values) for values in self.resolutions.rows()]
 
-        frame_ranges = {}
-        for line in self._lines(self.frame_ranges):
-            name, sep, value = line.partition("=")
-            if not sep or not name.strip() or len(value.split()) != 2:
-                errors.append(f"Frame range '{line}' should be: name = start end")
-            else:
-                frame_ranges[name.strip()] = " ".join(value.split())
-        settings["custom_framerange"] = frame_ranges
+        for values, wrong in self.frame_ranges.invalidRows():
+            errors.append(f"Frame range '{' '.join(values)}': " + "; ".join(wrong))
+        settings["custom_framerange"] = {name: f"{start} {end}" for name, start, end in self.frame_ranges.rows()}
 
         return settings, errors
-
-    @staticmethod
-    def _lines(edit: QPlainTextEdit) -> list:
-        return [line.strip() for line in edit.toPlainText().splitlines() if line.strip()]
 
     # ---------- changed from default ----------
 
@@ -620,7 +600,7 @@ class SettingsDialog(RoundedWindow, QDialog):
 
     def _watchChanges(self):
         for _, _, widget in self._tracked():
-            for signal in ("textChanged", "currentIndexChanged", "toggled"):
+            for signal in ("textChanged", "currentIndexChanged", "toggled", "changed"):
                 if hasattr(widget, signal):
                     getattr(widget, signal).connect(self.markChanged)
             if isinstance(widget, QCheckBox):
